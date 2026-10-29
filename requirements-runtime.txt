@@ -1,0 +1,7 @@
+# Packages the program needs while it runs; bundled into the installer by tools/build_bundle.py.
+# Development tools (pytest, PyInstaller) are in requirements-lock.txt and are not shipped.
+defusedxml==0.7.1
+dissect.cstruct==4.7
+dissect.extfs==3.15
+dissect.hypervisor==3.21
+dissect.util==3.24

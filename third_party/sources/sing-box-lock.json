@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "repository": "SagerNet/sing-box",
+  "version": "1.14.4",
+  "platform": "windows-amd64",
+  "asset": "sing-box-1.14.4-windows-amd64.zip",
+  "url": "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-windows-amd64.zip",
+  "bytes": 32891280,
+  "sha256": "99185d75d314a07dbba4a130c8ad986cbeb629a07927975636b341ca61f991df",
+  "executable_sha256": "8f30682ee198855440d2a7fe070d5d3653793b2d01bb8c85eea88f93bbe7c8b9",
+  "source_commit": "c005f35300ce76427dc285481ec5695f5b179cd2",
+  "source_archive": "source-c005f353.zip",
+  "source_url": "https://codeload.github.com/SagerNet/sing-box/zip/c005f35300ce76427dc285481ec5695f5b179cd2",
+  "source_bytes": 2870804,
+  "source_sha256": "024382c49feb4798674c6adde511444af1db182d11055e5514b327720ba53983"
+}

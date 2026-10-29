@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+ xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+ xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+ xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+ IgnorableNamespaces="uap uap10 rescap">
+ <Identity Name="ClaudeReset.NetworkIsolation" Publisher="CN=ClaudeResetLocal, OID.2.25.311729368913984317654407730594956997722=1" Version="1.0.0.0" ProcessorArchitecture="neutral" />
+ <Properties>
+  <DisplayName>ClaudeReset local network isolation</DisplayName>
+  <PublisherDisplayName>Local ClaudeReset test</PublisherDisplayName>
+  <Logo>Assets\store.png</Logo>
+  <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
+ </Properties>
+ <Resources><Resource Language="en-us" /></Resources>
+ <Dependencies><TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22000.0" MaxVersionTested="10.0.26100.0" /></Dependencies>
+ <Capabilities><rescap:Capability Name="runFullTrust" /><rescap:Capability Name="unvirtualizedResources" /></Capabilities>
+ <Applications>
+  <Application Id="IsolatedTools" Executable="identity-stub.exe" uap10:TrustLevel="mediumIL" uap10:RuntimeBehavior="win32App">
+   <uap:VisualElements AppListEntry="none" DisplayName="ClaudeReset isolated tools" Description="Local identity for explicitly launched network tests" BackgroundColor="transparent" Square150x150Logo="Assets\square150.png" Square44x44Logo="Assets\square44.png" />
+  </Application>
+ </Applications>
+</Package>

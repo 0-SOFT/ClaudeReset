@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "local_proxy": "http://127.0.0.1:25080",
+  "router_proxy": null,
+  "expected_exit_ips": ["203.0.113.10"]
+}

@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "tag": "v1.18.8",
+  "commit": "bde0890108a563f5d72eb8e57085be2b37177218",
+  "archive_url": "https://codeload.github.com/sandboxie-plus/Sandboxie/zip/bde0890108a563f5d72eb8e57085be2b37177218",
+  "archive_sha256": "318adc8ee59ff2d8001dcf0c51b72a3e503362cc652ccba94c6432e19c3b6596",
+  "service_inputs": {
+    "PipeServer.cpp": "fae3048688db822a57db1dd03dba9bea2a3fb7ee3fbc96385aea4d8266b7cdfe",
+    "GuiServer.cpp": "8022a1bd075bf14351beb931ac895d5b2271a7305f906ad39a35e9605d1678f5",
+    "queueserver.cpp": "0457ced26e884871778388e1f7334dd620b8ff29f35ce732ee36e0b05471a46c",
+    "ProcessServer.cpp": "9a848de1a9b4e8a54d25d73b0bb35cc97966686ec0b8d2e39443f49cf43ebd61"
+  },
+  "driver_inputs": {
+    "process.c": "89ff58f98fa49378cd55fd974568ec91c8896339ce1ae165d4e22ce7a6269602",
+    "process.h": "c9361a775d7a4011a0fcff837118ab8b79c82275fa7a3f392093617eb1f20419",
+    "obj_flt.c": "2de9ead34e079ef34f207968d66b13e3ba94be11a3cb05bac4646f42e80c7f4a",
+    "thread_token.c": "21dfdad11da232b6afc0c6b7a919b9c8e2185b0ea55fb835efe949f6985e45b8",
+    "token.c": "15ab3096ded0da5513f19fea597b893abaf30c6df5056b283a914286b96a3f01",
+    "process_api.c": "2cd41e67ab8bfbdf113c31827a4f6bfc864ef9a16feeeeab1ebf57bf83b6096a"
+  }
+}

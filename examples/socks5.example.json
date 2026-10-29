@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "adapter": "socks5_remote_v1",
+  "host": "REPLACE_WITH_PROXY_PUBLIC_IPV4",
+  "port": 1080,
+  "username": "REPLACE_WITH_USERNAME_OR_EMPTY",
+  "password": "REPLACE_WITH_PASSWORD_OR_EMPTY"
+}

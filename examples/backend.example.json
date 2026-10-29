@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "adapter": "sing_box_vless_reality_v1",
+  "engine_path": "C:\\Program Files\\ClaudeReset\\Engine\\engine.exe",
+  "engine_sha256": "8f30682ee198855440d2a7fe070d5d3653793b2d01bb8c85eea88f93bbe7c8b9",
+  "engine_version": "1.14.4",
+  "config": {
+    "log": {"disabled": true},
+    "inbounds": [{"type": "http", "tag": "local", "listen": "127.0.0.1", "listen_port": 1080}],
+    "outbounds": [{
+      "type": "vless", "tag": "selected-tunnel",
+      "server": "REPLACE_WITH_PROVIDER_IPV4", "server_port": 443,
+      "uuid": "REPLACE_WITH_UUID",
+      "tls": {
+        "enabled": true, "server_name": "REPLACE_WITH_SERVER_NAME",
+        "utls": {"enabled": true, "fingerprint": "chrome"},
+        "reality": {"enabled": true, "public_key": "REPLACE_WITH_REALITY_PUBLIC_KEY", "short_id": "REPLACE_WITH_SHORT_ID"}
+      }
+    }],
+    "route": {"final": "selected-tunnel"}
+  }
+}

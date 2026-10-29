@@ -1,0 +1,19 @@
+{
+  "version": "3.5.9",
+  "binary": {
+    "repository": "python/cpython-bin-deps",
+    "tag": "openssl-bin-3.5.9",
+    "commit": "ddb46a415b4995440723183e644f8d2c346567a2",
+    "archive_url": "https://codeload.github.com/python/cpython-bin-deps/zip/ddb46a415b4995440723183e644f8d2c346567a2",
+    "file": "openssl-bin-3.5.9.zip",
+    "sha256": "0dbf56dcce0ab4054e6192ae488d7d439f678cceca858810de990be51bb80335",
+    "bytes": 32808220
+  },
+  "source": {
+    "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
+    "file": "openssl-3.5.9.tar.gz",
+    "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a",
+    "sha256_url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz.sha256"
+  },
+  "authority": "Official Python binary repository and OpenSSL release checksum over HTTPS; no production signature claim."
+}

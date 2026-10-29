@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "version": "Python-3.12.10",
+  "filename": "Python-3.12.10.tar.xz",
+  "url": "https://www.python.org/ftp/python/3.12.10/Python-3.12.10.tar.xz",
+  "metadata_url": "https://www.python.org/ftp/python/3.12.10/Python-3.12.10.tar.xz.sigstore",
+  "sha256": "07ab697474595e06f06647417d3c7fa97ded07afc1a7e4454c5639919b46eaea",
+  "purpose": "Corresponding source for the current candidate Python runtime; not approval of this older runtime for final release.",
+  "digest_provenance": "SHA2_256 messageDigest from the official HTTPS Sigstore bundle; cryptographic Sigstore verification is not claimed."
+}
