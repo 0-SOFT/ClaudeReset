@@ -28,7 +28,8 @@ CSC = Path(r'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe')
 RUNTIME = ['LICENSE', 'src/launcher.py', 'src/launcher_run.py', 'src/claude_reset', 'packaging/identity', 'packaging/backend',
            'third_party/NOTICES.md', 'third_party/licenses', 'third_party/sources/sing-box-lock.json',
            'tools/vscode_claude_proxy.py', 'docs/USER-GUIDE.md', 'docs/GUI-ACCEPTANCE.md',
-           'docs/LICENSE-REVIEW-G6.md', 'docs/GUIDE-FRESH-START.md']
+           'docs/LICENSE-REVIEW-G6.md', 'docs/GUIDE-FRESH-START.md', 'docs/USER-GUIDE.en.md',
+           'docs/GUI-ACCEPTANCE.en.md', 'docs/LICENSE-REVIEW-G6.en.md', 'third_party/NOTICES.en.md']
 READ_ME = """ClaudeReset {version}
 
 Как запустить: дважды щёлкните ClaudeReset.exe в этой папке.
@@ -139,9 +140,15 @@ def main(argv=None):
     python = stage / 'python' / 'python.exe'
     if not python.is_file() or not (stage / 'python' / 'pythonw.exe').is_file():
         raise SystemExit('Unexpected Python archive layout')
-    subprocess.run([str(python), '-I', '-m', 'pip', 'install', '--disable-pip-version-check', '--no-warn-script-location',
-                    '--no-cache-dir', '-r', str(ROOT / 'requirements-runtime.txt')], check=True)
-    check = subprocess.run([str(python), '-I', '-c', 'import tkinter, dissect.hypervisor; print(tkinter.TkVersion)'],
+    scripts = stage / 'python' / 'Scripts'
+    shipped = set(scripts.iterdir()) if scripts.is_dir() else set()
+    # -B and --no-compile: no bytecode naming this build folder; Python compiles it on the first start instead.
+    subprocess.run([str(python), '-I', '-B', '-m', 'pip', 'install', '--disable-pip-version-check', '--no-warn-script-location',
+                    '--no-cache-dir', '--no-compile', '-r', str(ROOT / 'requirements-runtime.txt')], check=True)
+    # The packages' console scripts carry this build folder's path and the program never runs them.
+    for path in set(scripts.iterdir()) - shipped if scripts.is_dir() else ():
+        path.unlink()
+    check = subprocess.run([str(python), '-I', '-B', '-c', 'import tkinter, dissect.hypervisor; print(tkinter.TkVersion)'],
                            capture_output=True, text=True)
     if check.returncode:
         raise SystemExit('Bundled Python cannot import Tk or dependencies')
@@ -150,7 +157,7 @@ def main(argv=None):
     build_launcher(stage, work)
     (stage / 'Как запустить.txt').write_text(READ_ME.format(version=__version__), encoding='utf-8-sig')
     commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    packages = subprocess.run([str(python), '-I', '-m', 'pip', 'freeze', '--disable-pip-version-check'],
+    packages = subprocess.run([str(python), '-I', '-B', '-m', 'pip', 'freeze', '--disable-pip-version-check'],
                               capture_output=True, text=True).stdout.split()
     files = {p.relative_to(stage).as_posix(): sha256(p) for p in sorted(stage.rglob('*')) if p.is_file()}
     manifest = {'schema': 1, 'product': 'ClaudeReset', 'version': __version__, 'commit': commit,

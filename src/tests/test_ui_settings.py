@@ -44,3 +44,13 @@ def test_title_bar_uses_the_top_level_window_and_repaints_its_frame():
     assert calls == [('set', 99, 20), ('frame', 99, 0x27)]
     failing = lambda *args: 1
     assert ui_settings.dark_title_bar(window, True, api=failing, parent=lambda child: 99, redraw=redraw) is False
+
+
+def test_language_is_russian_by_default_and_remembered(tmp_path):
+    paths = SimpleNamespace(home=tmp_path)
+    assert ui_settings.language(paths) == 'ru'
+    ui_settings.save_theme(paths, 'dark')
+    ui_settings.save_language(paths, 'en')
+    assert ui_settings.language(paths) == 'en' and ui_settings.theme(paths) == 'dark'
+    with pytest.raises(ValueError):
+        ui_settings.save_language(paths, 'system')

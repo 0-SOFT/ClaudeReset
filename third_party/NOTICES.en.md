@@ -1,0 +1,8 @@
+# Third-party components of ClaudeReset
+
+- ClaudeReset's own code: MIT (the LICENSE file).
+- The installer and portable archive include a relocatable CPython 3.12 (python-build-standalone; its licences are in python/LICENSE.txt) and the packages from requirements-runtime.txt: dissect.hypervisor and dissect.extfs (AGPL-3.0-or-later), dissect.cstruct and dissect.util (Apache-2.0), defusedxml (PSFL). Because of the AGPL the program in that form is conveyed under the AGPL-3.0; the complete corresponding source is the public repository. Source archives of these packages are in third_party/sources.
+- Window fonts, SIL Open Font License 1.1: Onest (The Onest Project Authors) and Cormorant Garamond (Cormorant Project Authors) as modified versions — static weights instanced from the Google Fonts variable files, subset to Latin and Cyrillic, renamed families (these fonts have no Reserved Font Names); IBM Plex Mono (IBM Corp., Reserved Font Name "Plex") unmodified. The fonts are loaded for the program's own window only and are not installed into Windows.
+- sing-box 1.14.4: not shipped; when VLESS is chosen, the official Windows amd64 archive is downloaded on the user's computer and checked against third_party/sources/sing-box-lock.json. Licence: GPL-3.0-or-later with an additional condition on the name; the original texts are in licenses/sing-box-1.14.4.
+- Sandboxie v1.18.8: ClaudeReset's integration headers, tests and patches in src/native are GPL-3.0-or-later; the original LICENSE is in licenses/Sandboxie-v1.18.8. They are not part of the installer.
+- ClaudeReset's own code is not relicensed by these notices.

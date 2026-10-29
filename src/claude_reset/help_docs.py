@@ -30,12 +30,21 @@ LICENSE_DOCUMENTS = (
 )
 
 
-def read_document(kind: str) -> tuple[str, str]:
+def localized(relative, language):
+    """docs/X.md -> docs/X.en.md for an English window when that translation is bundled."""
+    if language == 'en' and relative.endswith('.md'):
+        english = relative[:-3] + '.en.md'
+        if (ROOT / english).is_file():
+            return english
+    return relative
+
+
+def read_document(kind: str, language: str = 'ru') -> tuple[str, str]:
     if kind not in DOCUMENTS:
         raise SafetyError('Неизвестный раздел справки.')
     title, relative = DOCUMENTS[kind]
     try:
-        paths = (relative,) + (LICENSE_DOCUMENTS if kind == 'licenses' else ())
+        paths = tuple(localized(path, language) for path in (relative,) + (LICENSE_DOCUMENTS if kind == 'licenses' else ()))
         sections = []
         for path in paths:
             content = (ROOT / path).read_text(encoding='utf-8')

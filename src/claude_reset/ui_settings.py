@@ -1,31 +1,53 @@
-"""Window preferences of this user (the theme) and the Windows look that follows it.
+"""Window preferences of this user (theme and language) and the Windows look that follows them.
 
-Not program state: losing the file only resets the choice to "as in Windows"."""
+Not program state: losing the file only resets the theme to "as in Windows" and the language to Russian."""
 import json
 
 from .safeio import atomic_json
 
 CHOICES = ('system', 'light', 'dark')
+LANGUAGES = ('ru', 'en')  # Russian by default; English is one click away
 
 
 def location(paths):
     return paths.home / '.claude-reset' / 'ui.json'
 
 
-def theme(paths):
+def _read(paths):
     try:
-        value = json.loads(location(paths).read_text('utf-8')).get('theme')
-    except (OSError, ValueError, AttributeError):
-        return 'system'
+        data = json.loads(location(paths).read_text('utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write(paths, key, value):
+    path = location(paths)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {k: v for k, v in _read(paths).items() if k in ('theme', 'language')}
+    atomic_json(path, dict(data, schema=1, **{key: value}), path.parent)
+
+
+def theme(paths):
+    value = _read(paths).get('theme')
     return value if value in CHOICES else 'system'
 
 
 def save_theme(paths, value):
     if value not in CHOICES:
         raise ValueError('Unknown theme')
-    path = location(paths)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_json(path, {'schema': 1, 'theme': value}, path.parent)
+    _write(paths, 'theme', value)
+
+
+def language(paths):
+    value = _read(paths).get('language')
+    return value if value in LANGUAGES else 'ru'
+
+
+def save_language(paths, value):
+    if value not in LANGUAGES:
+        raise ValueError('Unknown language')
+    _write(paths, 'language', value)
 
 
 def system_dark(*, read=None):

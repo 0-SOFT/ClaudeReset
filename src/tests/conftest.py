@@ -15,3 +15,12 @@ def tk_root():
     root.withdraw()
     yield root
     root.destroy()
+
+
+@pytest.fixture(autouse=True)
+def no_real_file_dialogs(monkeypatch):
+    """A real file dialog waits for a person and stops the run (a stray key press on a focused test window opened one).
+    Tests that need a chosen file patch these themselves."""
+    from tkinter import filedialog
+    for name in ('askopenfilename', 'asksaveasfilename', 'askdirectory'):
+        monkeypatch.setattr(filedialog, name, lambda **_: '')

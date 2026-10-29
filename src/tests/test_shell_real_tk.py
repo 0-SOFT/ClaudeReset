@@ -36,7 +36,7 @@ def ui(tmp_path, monkeypatch, tk_root):
     monkeypatch.setattr(diagnostics, 'operation_history', lambda paths: {'rows': [{'status': 'fixed_locations_wiped'}]})
     top = tk.Toplevel(tk_root)
     top.withdraw()
-    window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light')
+    window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', language='ru')
     window.ask = Answers()
     window.summaries = summaries
     pump(window)
@@ -275,7 +275,7 @@ def test_window_fits_a_small_screen(tk_root, tmp_path, monkeypatch):
     top = tk.Toplevel(tk_root)
     top.withdraw()
     top.winfo_screenwidth, top.winfo_screenheight = (lambda: 1000), (lambda: 700)
-    window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light')
+    window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', language='ru')
     pump(window)
     size = top.geometry().split('+')[0].split('x')
     assert int(size[0]) <= 920 and int(size[1]) <= 616
@@ -348,3 +348,74 @@ def test_leaving_the_page_stops_waiting(ui, monkeypatch):
     while time.time() < end:
         ui.root.update()
     assert FakeSession.instances[-1].calls == ['check']
+
+
+def test_english_window_has_no_russian_anywhere(tk_root, tmp_path, monkeypatch):
+    import re
+    from claude_reset import ui_text
+    cyrillic = re.compile('[А-Яа-яЁё]')
+    monkeypatch.setattr(proxy_flow, 'summary', lambda paths: SUMMARY)
+    monkeypatch.setattr(diagnostics, 'operation_history', lambda paths: {'rows': []})
+    top = tk.Toplevel(tk_root)
+    top.withdraw()
+    try:
+        window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', language='en')
+        window.ask = Answers()
+        pump(window)
+
+        def russian():
+            found = []
+            for page in window.pages.values():
+                found += [t for t in texts(page.inner) if cyrillic.search(t) and t not in ('Русский', 'РУССКИЙ')]
+            found += [t for t in texts(window.root) if cyrillic.search(t) and t not in ('Русский', 'РУССКИЙ')]
+            return sorted(set(found))
+        for key in ('home', 'reset', 'proxy', 'help'):
+            window.show(key)
+            pump(window)
+        assert russian() == []
+        for state, fix in (('on', None), ('problem', 'accept_exit'), ('paused', 'resume'), ('partial', 'install'),
+                           ('off', None), ('unknown', None)):
+            window.paint_proxy({'state': state, 'fix': fix, 'proxy': 'SOCKS5', 'proxy_saved': True,
+                                'title': {'on': 'Защита включена', 'paused': 'Защита на паузе'}.get(state, 'Claude сейчас без сети'),
+                                'text': 'Прокси не отвечает. Напрямую Claude не выйдет — так задумано.',
+                                'clients': [{'name': 'Claude Code в терминале', 'present': True}]})
+            assert russian() == [], state
+        window.session = type('S', (), {'keep_memory': True, 'accept_unlisted': False})()
+        window.reset_checked({'rows': [{'label': 'Claude Code: история, проекты, память', 'size': '40,3 МБ', 'status': 'present'}],
+                              'total': '40,3 МБ', 'credentials': 2, 'nothing_found': False, 'ready': False,
+                              'blockers': [{'key': 'vscode', 'kind': 'user', 'text': reset_flow.BLOCKERS['vscode'][1]},
+                                           {'key': 'processes', 'kind': 'auto', 'text': reset_flow.BLOCKERS['processes'][1]}]}, False)
+        window.stop_watch()
+        assert russian() == [] and '40.3 MB' in list(texts(window.reset_result))
+        window.reset_done({'stage': 'wiped', 'result': {'status': 'done', 'memory': 'restored_verbatim', 'desktop_keys': 'not_supported',
+                                                        'browsers': 'browsers_open', 'passwords_removed': 2, 'no_files_left': True}})
+        assert russian() == []
+        assert window.ask.asked == []
+    finally:
+        ui_text.set_language('ru')
+        top.destroy()
+
+
+def test_russian_by_default_and_english_one_click_away(tk_root, tmp_path, monkeypatch):
+    from claude_reset import ui_settings, ui_text
+    monkeypatch.setattr(proxy_flow, 'summary', lambda paths: SUMMARY)
+    monkeypatch.setattr(diagnostics, 'operation_history', lambda paths: {'rows': []})
+    top = tk.Toplevel(tk_root)
+    top.withdraw()
+    try:
+        window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light')
+        pump(window)
+        assert ui_text.language() == 'ru' and str(window.language_button.cget('text')) == 'ENGLISH'
+        window.show('reset')
+        pump(window)
+        window.language_button.invoke()
+        pump(window)
+        assert ui_text.language() == 'en' and window.current == 'reset'
+        assert str(window.language_button.cget('text')) == 'РУССКИЙ' and 'Reset Claude' in list(texts(window.pages['reset'].inner))
+        assert ui_settings.language(window.paths) == 'en'
+        window.language_button.invoke()
+        pump(window)
+        assert ui_text.language() == 'ru' and ui_settings.language(window.paths) == 'ru'
+    finally:
+        ui_text.set_language('ru')
+        top.destroy()

@@ -113,3 +113,13 @@ def test_license_section_refuses_incomplete_bundle(tmp_path, monkeypatch, payloa
     monkeypatch.setattr(help_docs, 'ROOT', tmp_path)
     with pytest.raises(SafetyError, match='Справка недоступна'):
         help_docs.read_document('licenses')
+
+
+def test_english_window_reads_english_documents():
+    title, content = help_docs.read_document('guide', 'en')
+    assert content.startswith('# ClaudeReset guide') and 'Step 1. Reset' in content
+    _, limits = help_docs.read_document('limits', 'en')
+    assert limits.startswith('# ClaudeReset limits')
+    _, licences = help_docs.read_document('licenses', 'en')
+    assert 'Third-party components of ClaudeReset' in licences and 'MIT' in licences
+    assert help_docs.read_document('guide', 'ru')[1].startswith('# Руководство ClaudeReset')

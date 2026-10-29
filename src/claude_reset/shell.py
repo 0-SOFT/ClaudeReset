@@ -14,6 +14,7 @@ from tkinter import filedialog, font as tkfont, ttk
 from . import brand, proxy_flow, reset_flow
 from .gui_worker import Worker
 from .i18n import gui_message
+from .ui_text import set_language, sizes, tr, tr_text
 
 C = dict(brand.LIGHT)  # the active palette; Theme fills it for the chosen mode
 STEPS = {
@@ -239,7 +240,7 @@ class Scroll(ttk.Frame):
 class Dialog(tk.Toplevel):
     """A modal question in the brand. Returns the value of the pressed button, or None."""
 
-    def __init__(self, shell, title, text, *, buttons=(('Primary', 'Понятно', True),), lines=(), typed=None):
+    def __init__(self, shell, title, text, *, buttons=(('Primary', tr('Понятно'), True),), lines=(), typed=None):
         super().__init__(shell.root, background=C['paper'])
         theme, px = shell.theme, shell.theme.px
         self.result = None
@@ -256,12 +257,12 @@ class Dialog(tk.Toplevel):
             box = ttk.Frame(body, style='Notice.TFrame')
             box.pack(fill='x', pady=(px(16), 0))
             for line in lines:
-                ttk.Label(box, text='•  ' + line, style='Mist.body.TLabel', wraplength=width - px(40), justify='left').pack(anchor='w', pady=px(2))
+                ttk.Label(box, text='•  ' + tr_text(line), style='Mist.body.TLabel', wraplength=width - px(40), justify='left').pack(anchor='w', pady=px(2))
         self.entry = None
         row = ttk.Frame(body, style='Paper.TFrame')
         primary = []
         if typed:
-            ttk.Label(body, text=f'Чтобы подтвердить, введите {typed}', style='Paper.small.TLabel').pack(anchor='w', pady=(px(18), px(6)))
+            ttk.Label(body, text=tr('Чтобы подтвердить, введите {word}', word=typed), style='Paper.small.TLabel').pack(anchor='w', pady=(px(18), px(6)))
             self.word = tk.StringVar(master=self)
             self.entry = ttk.Entry(body, textvariable=self.word, style='Brand.TEntry', font=theme.fonts['field'], width=24)
             self.entry.pack(anchor='w')
@@ -301,10 +302,12 @@ class Dialog(tk.Toplevel):
 
 
 class Shell:
-    def __init__(self, paths, root=None, *, start=None, theme=None):
+    def __init__(self, paths, root=None, *, start=None, theme=None, language=None):
         from . import ui_settings
         self.paths = paths
         self.root = root or tk.Tk()
+        self.language_choice = language or ui_settings.language(paths)
+        set_language(self.language_choice)
         self.theme_choice = theme or ui_settings.theme(paths)
         self.theme = Theme(self.root, ui_settings.resolve(self.theme_choice))
         px = self.theme.px
@@ -370,18 +373,36 @@ class Shell:
         """Remember the choice and rebuild the window in it; not while an action runs."""
         from . import ui_settings
         if self.worker.busy:
-            self.status.set('Тема сменится после текущего действия: выберите её ещё раз.')
+            self.status.set(tr('Тема сменится после текущего действия: выберите её ещё раз.'))
             return
         try:
             ui_settings.save_theme(self.paths, choice)
         except (OSError, ValueError):
             pass
         self.theme_choice = choice
+        self.rebuild()
+
+    def set_language_choice(self, choice):
+        """Remember the language and rebuild the window in it; not while an action runs."""
+        from . import ui_settings
+        if self.worker.busy:
+            self.status.set(tr('Язык сменится после текущего действия: выберите его ещё раз.'))
+            return
+        try:
+            ui_settings.save_language(self.paths, choice)
+        except (OSError, ValueError):
+            pass
+        self.language_choice = choice
+        set_language(choice)
+        self.rebuild()
+
+    def rebuild(self):
+        from . import ui_settings
         current = self.current
         for child in self.root.winfo_children():
             child.destroy()
         self.wrapped, self.fitting, self.session = {}, set(), None
-        self.theme = Theme(self.root, ui_settings.resolve(choice))
+        self.theme = Theme(self.root, ui_settings.resolve(self.theme_choice))
         self.dress()
         self.build()
         self.show(current)
@@ -401,21 +422,25 @@ class Shell:
         ttk.Label(head, image=self.theme.image('mark', brand.mark(px(26), left=C['ink'], background=C['mist'])),
                   style='Mist.body.TLabel').pack(side='left')
         ttk.Label(head, text='ClaudeReset', style='Mist.brand.TLabel').pack(side='left', padx=(px(10), 0))
-        ttk.Label(side, text='0-SOFT · НАЧНЁМ С НУЛЯ', style='Mist.tag.TLabel').pack(anchor='w', padx=px(8), pady=(px(6), px(28)))
+        ttk.Label(side, text=tr('0-SOFT · НАЧНЁМ С НУЛЯ'), style='Mist.tag.TLabel').pack(anchor='w', padx=px(8), pady=(px(6), px(14)))
+        # The other language, in capitals so it is found at once; Russian is the default.
+        other = ('en', 'ENGLISH') if self.language_choice == 'ru' else ('ru', 'РУССКИЙ')
+        self.language_button = self.small_button(side, other[1], lambda: self.set_language_choice(other[0]), bg='mist')
+        self.language_button.pack(anchor='w', padx=px(8), pady=(0, px(22)))
         lens_on = self.theme.image('lens-on', brand.lens(px(15), background=C['mist']))
         lens_off = self.theme.image('lens-off', brand.rounded(lens_on.width(), lens_on.height(), 1, background=C['mist']))
         self.lens = (lens_on, lens_off)
         self.nav = {}
-        for key, label in (('home', 'Главная'), ('reset', 'Шаг 1 · Сброс'), ('proxy', 'Шаг 2 · Прокси и защита'), ('help', 'Помощь')):
+        for key, label in (('home', tr('Главная')), ('reset', tr('Шаг 1 · Сброс')), ('proxy', tr('Шаг 2 · Прокси и защита')), ('help', tr('Помощь'))):
             button = ttk.Button(side, text=label, style='Nav.TButton', image=lens_off, compound='left',
                                 command=lambda k=key: self.show(k), takefocus=True)
             button.pack(anchor='w', fill='x')
             self.nav[key] = button
         bottom = ttk.Frame(side, style='Mist.TFrame')
         bottom.pack(side='bottom', fill='x', padx=px(8))
-        ttk.Label(bottom, text='Все инструменты программы — для тех, кто знает, что делает.', style='Mist.small.TLabel',
+        ttk.Label(bottom, text=tr('Все инструменты программы — для тех, кто знает, что делает.'), style='Mist.small.TLabel',
                   wraplength=px(210), justify='left').pack(anchor='w', pady=(0, px(8)))
-        self.small_button(bottom, 'Режим для специалистов', self.open_expert, bg='mist').pack(anchor='w')
+        self.small_button(bottom, tr('Режим для специалистов'), self.open_expert, bg='mist').pack(anchor='w')
 
         main = ttk.Frame(self.root, style='Paper.TFrame')
         main.grid(row=0, column=1, sticky='nsew')
@@ -433,9 +458,9 @@ class Shell:
         self.progress.pack(fill='x')
         status_row = ttk.Frame(bar, style='Paper.TFrame')
         status_row.pack(fill='x', pady=(px(8), 0))
-        self.status = tk.StringVar(master=self.root, value='Готово к работе. Открытие окна ничего не меняет.')
+        self.status = tk.StringVar(master=self.root, value=tr('Готово к работе. Открытие окна ничего не меняет.'))
         ttk.Label(status_row, textvariable=self.status, style='Paper.small.TLabel').pack(side='left')
-        self.cancel_button = self.small_button(status_row, 'Остановить', self.cancel, bg='paper')
+        self.cancel_button = self.small_button(status_row, tr('Остановить'), self.cancel, bg='paper')
 
     def small_button(self, master, text, command, *, bg='paper'):
         return ttk.Button(master, text=text, command=command, style=f'Small.{bg.capitalize()}.TButton')
@@ -501,18 +526,18 @@ class Shell:
     def run(self, job, done, *, uac_steps=()):
         """job(step) runs in the background; step(label, fn) shows progress; done(result) runs in the window."""
         if self.worker.busy:
-            self.status.set('Подождите: предыдущее действие ещё выполняется.')
+            self.status.set(tr('Подождите: предыдущее действие ещё выполняется.'))
             return False
 
         def action(context):
             def step(label, fn, uac=False):
-                self.step_text = STEPS.get(label, 'Выполняем…')
+                self.step_text = tr(STEPS.get(label, 'Выполняем…'))
                 self.changing = self.changing or label not in READ_ONLY
                 return context.step(fn, waiting_uac=uac or label in uac_steps)
             return job(step)
         self.callback = done
         self.changing = False
-        self.step_text = 'Выполняем…'
+        self.step_text = tr('Выполняем…')
         self.operation = self.worker.start(action)
         self.status.set(self.step_text)
         self.progress.configure(mode='indeterminate', style='Brand.Horizontal.TProgressbar')
@@ -527,9 +552,9 @@ class Shell:
                     continue
                 self.waiting_uac = event.state == 'waiting_uac'
                 if event.state == 'waiting_uac':
-                    self.status.set(UAC_TEXT)
+                    self.status.set(tr(UAC_TEXT))
                 elif event.state in ('running', 'queued'):
-                    self.status.set(self.step_text or 'Выполняем…')
+                    self.status.set(self.step_text or tr('Выполняем…'))
                 if event.cancellable:
                     self.cancel_button.pack(side='right')
                 else:
@@ -542,17 +567,17 @@ class Shell:
                     self.cancel_button.pack_forget()
                     self.waiting_uac = False
                     if event.state == 'completed':
-                        self.status.set('Готово.')
+                        self.status.set(tr('Готово.'))
                         try:
                             callback(result)
                         except Exception:
-                            self.status.set(gui_message('callback_failed'))
+                            self.status.set(tr(gui_message('callback_failed')))
                     elif event.state == 'cancelled':
-                        self.status.set(gui_message('cancelled'))
+                        self.status.set(tr(gui_message('cancelled')))
                     else:
-                        self.status.set('Не получилось.')
-                        self.ask('Не получилось', 'Действие остановилось с ошибкой. Ничего не повторялось автоматически. '
-                                 'Проверьте состояние ещё раз; если ошибка повторится — сохраните отчёт на странице «Помощь».')
+                        self.status.set(tr('Не получилось.'))
+                        self.ask(tr('Не получилось'), tr('Действие остановилось с ошибкой. Ничего не повторялось автоматически. '
+                                 'Проверьте состояние ещё раз; если ошибка повторится — сохраните отчёт на странице «Помощь».'))
         except queue.Empty:
             pass
         finally:
@@ -560,46 +585,46 @@ class Shell:
 
     def cancel(self):
         if not self.worker.cancel():
-            self.status.set(gui_message('cancel_unavailable'))
+            self.status.set(tr(gui_message('cancel_unavailable')))
 
-    def dialog(self, title, text, buttons=(('Primary', 'Понятно', True),), lines=(), typed=None):
+    def dialog(self, title, text, buttons=(('Primary', tr('Понятно'), True),), lines=(), typed=None):
         return Dialog(self, title, text, buttons=buttons, lines=lines, typed=typed).show()
 
-    def confirm(self, title, text, yes, *, no='Отмена', lines=(), typed=None):
+    def confirm(self, title, text, yes, *, no=tr('Отмена'), lines=(), typed=None):
         return bool(self.ask(title, text, (('Primary', yes, True), ('Ghost', no, None)), lines, typed))
 
     def close(self):
         # Reading the state can simply stop; only an action that changes something asks first.
         if self.worker.busy and (self.changing or self.waiting_uac):
-            text = gui_message('uac_close_unknown') if self.waiting_uac else \
-                'Действие ещё выполняется. Если закрыть окно, оно продолжится без вас, а результат придётся проверить заново.'
-            if not self.confirm('Закрыть окно?', text, 'Закрыть', no='Остаться'):
+            text = tr(gui_message('uac_close_unknown')) if self.waiting_uac else \
+                tr('Действие ещё выполняется. Если закрыть окно, оно продолжится без вас, а результат придётся проверить заново.')
+            if not self.confirm(tr('Закрыть окно?'), text, tr('Закрыть'), no=tr('Остаться')):
                 return
         self.root.destroy()
 
     def open_expert(self):
         try:
             subprocess.Popen(expert_command(), cwd=str(Path(__file__).resolve().parents[1]))
-            self.status.set('Режим для специалистов открывается в отдельном окне.')
+            self.status.set(tr('Режим для специалистов открывается в отдельном окне.'))
         except OSError:
-            self.ask('Не открылось', 'Не удалось открыть режим для специалистов. Запустите ClaudeReset.cmd ещё раз.')
+            self.ask(tr('Не открылось'), tr('Не удалось открыть режим для специалистов. Запустите ClaudeReset.cmd ещё раз.'))
 
     # ----- home -----
     def build_home(self, page):
         px = self.theme.px
         self.label(page, 'CLAUDERESET', 'tag')
-        self.label(page, 'Начнём с нуля', 'h1', pady=(px(6), px(8)))
-        self.label(page, 'Два шага, чтобы Claude увидел вас как нового пользователя: сначала сотрите его следы '
-                   'на этом компьютере, затем направьте его через ваш прокси.', 'lead', pady=(0, px(28)))
+        self.label(page, tr('Начнём с нуля'), 'h1', pady=(px(6), px(8)))
+        self.label(page, tr('Два шага, чтобы Claude увидел вас как нового пользователя: сначала сотрите его следы '
+                   'на этом компьютере, затем направьте его через ваш прокси.'), 'lead', pady=(0, px(28)))
         row = ttk.Frame(page, style='Paper.TFrame')
         row.pack(fill='x')
         row.columnconfigure((0, 1), weight=1, uniform='cards')
         self.home_status = {}
         for column, key, step, title, text, action in (
-                (0, 'reset', 'ШАГ 1', 'Сброс', 'Удаляет вход, историю и данные Claude Desktop и Claude Code. '
-                 'Сами программы остаются установленными.', 'Перейти к сбросу →'),
-                (1, 'proxy', 'ШАГ 2', 'Прокси и защита', 'Claude будет выходить в интернет только через ваш прокси. '
-                 'Если прокси пропадёт, Claude останется без сети, а не выйдет напрямую.', 'Настроить прокси →')):
+                (0, 'reset', tr('ШАГ 1'), tr('Сброс'), tr('Удаляет вход, историю и данные Claude Desktop и Claude Code. '
+                 'Сами программы остаются установленными.'), tr('Перейти к сбросу →')),
+                (1, 'proxy', tr('ШАГ 2'), tr('Прокси и защита'), tr('Claude будет выходить в интернет только через ваш прокси. '
+                 'Если прокси пропадёт, Claude останется без сети, а не выйдет напрямую.'), tr('Настроить прокси →'))):
             card = ttk.Frame(row, style='Card.TFrame', padding=px(26))
             card.grid(row=0, column=column, sticky='nsew', padx=(0, px(10)) if column == 0 else (px(10), 0))
             self.label(card, step, 'tag', bg='marble')
@@ -610,13 +635,13 @@ class Shell:
             status.pack(anchor='w', pady=(0, px(18)))
             dot = ttk.Label(status, style='Marble.body.TLabel')
             dot.pack(side='left')
-            words = ttk.Label(status, text='Проверяем…', style='Marble.small.TLabel')
+            words = ttk.Label(status, text=tr('Проверяем…'), style='Marble.small.TLabel')
             words.pack(side='left', padx=(px(8), 0))
             self.home_status[key] = (dot, words)
             self.button(card, action, lambda k=key: self.show(k), bg='marble').pack(anchor='w')
         notice = self.card(page, 'Notice', pady=(px(24), 0))
-        self.label(notice, 'После обоих шагов откройте Claude и войдите под новым аккаунтом. '
-                   'Порядок важен: сначала сброс, потом прокси.', 'body', bg='mist')
+        self.label(notice, tr('После обоих шагов откройте Claude и войдите под новым аккаунтом. '
+                   'Порядок важен: сначала сброс, потом прокси.'), 'body', bg='mist')
 
     def set_status_dot(self, key, color, text):
         dot, words = self.home_status[key]
@@ -636,62 +661,62 @@ class Shell:
         def done(result):
             self.protection = result['protection']
             if result['wiped']:
-                self.set_status_dot('reset', 'good', 'Сброс уже выполнялся на этом компьютере')
+                self.set_status_dot('reset', 'good', tr('Сброс уже выполнялся на этом компьютере'))
             else:
-                self.set_status_dot('reset', 'stone', 'Ещё не выполнялся')
+                self.set_status_dot('reset', 'stone', tr('Ещё не выполнялся'))
             state = self.protection['state']
             color = {'on': 'good', 'problem': 'bad', 'partial': 'bad', 'paused': 'graphite2'}.get(state, 'stone')
-            self.set_status_dot('proxy', color, self.protection['title'])
-            self.status.set('Готово к работе. Открытие окна ничего не меняет.')
+            self.set_status_dot('proxy', color, tr(self.protection['title']))
+            self.status.set(tr('Готово к работе. Открытие окна ничего не меняет.'))
         self.run(job, done)
 
     # ----- reset -----
     def build_reset(self, page):
         px = self.theme.px
-        self.label(page, 'ШАГ 1 · СБРОС', 'tag')
-        self.label(page, 'Сброс Claude', 'h1', pady=(px(6), px(8)))
-        self.label(page, 'Сотрём всё, что Claude хранит на этом компьютере: вход, историю, настройки и сохранённые пароли. '
-                   'Сами программы останутся — после сброса они откроются как в первый раз.', 'lead', pady=(0, px(28)))
+        self.label(page, tr('ШАГ 1 · СБРОС'), 'tag')
+        self.label(page, tr('Сброс Claude'), 'h1', pady=(px(6), px(8)))
+        self.label(page, tr('Сотрём всё, что Claude хранит на этом компьютере: вход, историю, настройки и сохранённые пароли. '
+                   'Сами программы останутся — после сброса они откроются как в первый раз.'), 'lead', pady=(0, px(28)))
 
-        self.label(page, 'Что сохранить', 'h3', pady=(0, px(12)))
+        self.label(page, tr('Что сохранить'), 'h3', pady=(0, px(12)))
         self.keep_memory = tk.StringVar(master=self.root, value='keep')
         row = ttk.Frame(page, style='Paper.TFrame')
         row.pack(fill='x', pady=(0, px(28)))
         row.columnconfigure((0, 1), weight=1, uniform='choice')
         self.choices = []
         for column, value, title, text in (
-                (0, 'keep', 'Стереть всё, но оставить память', 'Ваши заметки и инструкции для Claude Code (файлы CLAUDE.md) '
-                 'вернутся на место. Всё остальное будет удалено.'),
-                (1, 'none', 'Стереть всё', 'Ничего не сохраняется. Полностью с нуля.')):
+                (0, 'keep', tr('Стереть всё, но оставить память'), tr('Ваши заметки и инструкции для Claude Code (файлы CLAUDE.md) '
+                 'вернутся на место. Всё остальное будет удалено.')),
+                (1, 'none', tr('Стереть всё'), tr('Ничего не сохраняется. Полностью с нуля.'))):
             self.choices.append(self.choice(row, column, value, title, text))
         self.keep_memory.trace_add('write', lambda *_: self.paint_choices())
         self.paint_choices()
 
-        self.label(page, 'Сначала — на сайте Claude', 'h3', pady=(0, px(8)))
-        self.label(page, 'В браузере, где вы вошли в старый аккаунт, выйдите на всех устройствах и отзовите доступ '
-                   'Claude Code. Иначе сервер свяжет новый вход со старым. Скопируйте адрес и вставьте его в браузер.',
+        self.label(page, tr('Сначала — на сайте Claude'), 'h3', pady=(0, px(8)))
+        self.label(page, tr('В браузере, где вы вошли в старый аккаунт, выйдите на всех устройствах и отзовите доступ '
+                   'Claude Code. Иначе сервер свяжет новый вход со старым. Скопируйте адрес и вставьте его в браузер.'),
                    'body', pady=(0, px(12)))
         links = ttk.Frame(page, style='Paper.TFrame')
         links.pack(anchor='w', pady=(0, px(12)))
         from .services import SERVER_LINKS
-        for kind, label in (('sessions', 'Скопировать адрес: сессии'), ('code_tokens', 'Скопировать адрес: доступ Claude Code')):
+        for kind, label in (('sessions', tr('Скопировать адрес: сессии')), ('code_tokens', tr('Скопировать адрес: доступ Claude Code'))):
             self.small_button(links, label, lambda u=SERVER_LINKS[kind]: self.copy(u)).pack(side='left', padx=(0, px(10)))
         self.server_done = tk.BooleanVar(master=self.root, value=False)
-        ttk.Checkbutton(page, text='Готово: я вышел на всех устройствах и сохранил нужное из облака',
+        ttk.Checkbutton(page, text=tr('Готово: я вышел на всех устройствах и сохранил нужное из облака'),
                         variable=self.server_done, style='Paper.TCheckbutton').pack(anchor='w', pady=(0, px(28)))
 
-        self.label(page, 'Браузеры', 'h3', pady=(0, px(8)))
+        self.label(page, tr('Браузеры'), 'h3', pady=(0, px(8)))
         self.browsers = tk.BooleanVar(master=self.root, value=True)
-        ttk.Checkbutton(page, text='Также выйти из claude.ai в Chrome и Edge (закройте их перед сбросом)',
+        ttk.Checkbutton(page, text=tr('Также выйти из claude.ai в Chrome и Edge (закройте их перед сбросом)'),
                         variable=self.browsers, style='Paper.TCheckbutton').pack(anchor='w', pady=(0, px(28)))
 
         actions = ttk.Frame(page, style='Paper.TFrame')
         actions.pack(anchor='w')
-        self.reset_button = self.button(actions, 'Проверить и очистить', self.reset_start)
+        self.reset_button = self.button(actions, tr('Проверить и очистить'), self.reset_start)
         self.reset_button.pack(side='left')
-        self.button(actions, 'Только посмотреть, что найдено', lambda: self.reset_start(dry=True), kind='Ghost').pack(side='left', padx=(px(12), 0))
-        self.label(page, 'Программа сама закроет Claude, остановит службу Cowork и сохранит копии ваших файлов. '
-                   'Перед удалением она покажет, что найдено, и попросит подтверждение.', 'small', pady=(px(12), 0))
+        self.button(actions, tr('Только посмотреть, что найдено'), lambda: self.reset_start(dry=True), kind='Ghost').pack(side='left', padx=(px(12), 0))
+        self.label(page, tr('Программа сама закроет Claude, остановит службу Cowork и сохранит копии ваших файлов. '
+                   'Перед удалением она покажет, что найдено, и попросит подтверждение.'), 'small', pady=(px(12), 0))
         self.reset_result = ttk.Frame(page, style='Paper.TFrame')
         self.reset_result.pack(fill='x', pady=(px(24), 0))
 
@@ -726,7 +751,7 @@ class Shell:
     def copy(self, text):
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
-        self.status.set('Адрес скопирован. Вставьте его в адресную строку браузера.')
+        self.status.set(tr('Адрес скопирован. Вставьте его в адресную строку браузера.'))
 
     def clear(self, frame):
         for child in frame.winfo_children():
@@ -737,8 +762,8 @@ class Shell:
             return
         self.stop_watch()
         if not dry and not self.server_done.get():
-            self.ask('Сначала сайт Claude', 'Выйдите из старого аккаунта на всех устройствах и поставьте отметку «Готово». '
-                     'Без этого новый вход может связаться со старым.')
+            self.ask(tr('Сначала сайт Claude'), tr('Выйдите из старого аккаунта на всех устройствах и поставьте отметку «Готово». '
+                     'Без этого новый вход может связаться со старым.'))
             return
         keep = self.keep_memory.get() == 'keep'
         if self.session is None or self.session.keep_memory != keep:
@@ -786,49 +811,49 @@ class Shell:
         self.clear(frame)
         card = self.card(frame)
         if result['nothing_found']:
-            self.label(card, 'Здесь пусто', 'h2', bg='marble')
-            self.label(card, 'Данных Claude на этом компьютере не найдено. Начнём с нуля — переходите к прокси.', bg='marble', pady=(px(6), px(16)))
-            self.button(card, 'Дальше: прокси и защита →', lambda: self.show('proxy'), bg='marble').pack(anchor='w')
+            self.label(card, tr('Здесь пусто'), 'h2', bg='marble')
+            self.label(card, tr('Данных Claude на этом компьютере не найдено. Начнём с нуля — переходите к прокси.'), bg='marble', pady=(px(6), px(16)))
+            self.button(card, tr('Дальше: прокси и защита →'), lambda: self.show('proxy'), bg='marble').pack(anchor='w')
             return
-        self.label(card, 'Что найдено', 'h3', bg='marble', pady=(0, px(10)))
+        self.label(card, tr('Что найдено'), 'h3', bg='marble', pady=(0, px(10)))
         for row in result['rows']:
             line = ttk.Frame(card, style='Marble.TFrame')
             line.pack(fill='x', pady=px(2))
-            ttk.Label(line, text=row['label'], style='Marble.body.TLabel').pack(side='left')
-            ttk.Label(line, text=row['size'] if row['status'] == 'present' else 'не прочиталось',
+            ttk.Label(line, text=tr(row['label']), style='Marble.body.TLabel').pack(side='left')
+            ttk.Label(line, text=sizes(row['size']) if row['status'] == 'present' else tr('не прочиталось'),
                       style='Marble.mono.TLabel').pack(side='right')
         if result['credentials']:
-            self.label(card, f'Сохранённые пароли Claude в Windows: {result["credentials"]}', bg='marble', pady=(px(2), 0))
-        self.label(card, f'Всего файлов на {result["total"]}', 'small', bg='marble', pady=(px(8), 0))
+            self.label(card, tr('Сохранённые пароли Claude в Windows: {n}', n=result["credentials"]), bg='marble', pady=(px(2), 0))
+        self.label(card, tr('Всего файлов на {size}', size=sizes(result["total"])), 'small', bg='marble', pady=(px(8), 0))
         auto = [b for b in result['blockers'] if b['kind'] == 'auto']
         ask = [b for b in result['blockers'] if b['kind'] == 'ask']
         user = [b for b in result['blockers'] if b['kind'] == 'user']
         if auto:
-            self.label(card, 'Программа сделает сама', 'h3', bg='marble', pady=(px(18), px(6)))
+            self.label(card, tr('Программа сделает сама'), 'h3', bg='marble', pady=(px(18), px(6)))
             for b in auto:
-                self.label(card, '•  ' + b['text'], bg='marble')
+                self.label(card, '•  ' + tr(b['text']), bg='marble')
         if user:
-            self.label(card, 'Нужно сделать вам', 'h3', bg='marble', pady=(px(18), px(6)))
+            self.label(card, tr('Нужно сделать вам'), 'h3', bg='marble', pady=(px(18), px(6)))
             for b in user:
-                self.label(card, '•  ' + b['text'], 'strong', bg='marble')
+                self.label(card, '•  ' + tr(b['text']), 'strong', bg='marble')
             buttons = ttk.Frame(card, style='Marble.TFrame')
             buttons.pack(anchor='w', pady=(px(14), 0))
-            self.button(buttons, 'Проверить снова', lambda: self.reset_start(dry), bg='marble').pack(side='left')
+            self.button(buttons, tr('Проверить снова'), lambda: self.reset_start(dry), bg='marble').pack(side='left')
             if any(b['key'] == 'restore_sources' for b in user):
-                self.button(buttons, 'Открыть автозагрузку', self.open_startup, kind='Ghost', bg='marble').pack(side='left', padx=(px(10), 0))
+                self.button(buttons, tr('Открыть автозагрузку'), self.open_startup, kind='Ghost', bg='marble').pack(side='left', padx=(px(10), 0))
             if any(b['key'] in ('inventory', 'cowork_location') for b in user):
-                self.button(buttons, 'Режим для специалистов', self.open_expert, kind='Ghost', bg='marble').pack(side='left', padx=(px(10), 0))
-            self.label(card, 'Окно проверяет само каждые несколько секунд и продолжит, как только всё будет готово.',
+                self.button(buttons, tr('Режим для специалистов'), self.open_expert, kind='Ghost', bg='marble').pack(side='left', padx=(px(10), 0))
+            self.label(card, tr('Окно проверяет само каждые несколько секунд и продолжит, как только всё будет готово.'),
                        'small', bg='marble', pady=(px(10), 0))
             self.watch_blockers(dry, {b['key'] for b in user})
             return
         if dry:
-            self.button(card, 'Очистить', lambda: self.reset_start(), bg='marble').pack(anchor='w', pady=(px(18), 0))
+            self.button(card, tr('Очистить'), lambda: self.reset_start(), bg='marble').pack(anchor='w', pady=(px(18), 0))
             return
         if ask and not self.session.accept_unlisted:
-            if not self.confirm('Непроверенная версия Claude', 'Эта версия Claude ещё не проверялась с программой. '
+            if not self.confirm(tr('Непроверенная версия Claude'), tr('Эта версия Claude ещё не проверялась с программой. '
                                 'Программа сотрёт те же папки, что и обычно, но новые места хранения, если версия их добавила, '
-                                'не найдёт. Продолжить?', 'Продолжить', no='Не сейчас'):
+                                'не найдёт. Продолжить?'), tr('Продолжить'), no=tr('Не сейчас')):
                 return
             self.session.accept_unlisted = True
             session = self.session
@@ -838,15 +863,15 @@ class Shell:
 
     def reset_confirm(self, result, auto):
         keep = self.session.keep_memory
-        lines = [f'{r["label"]} — {r["size"]}' for r in result['rows']]
+        lines = [f'{tr(r["label"])} — {sizes(r["size"])}' for r in result['rows']]
         if result['credentials']:
-            lines.append(f'Сохранённые пароли Claude в Windows: {result["credentials"]}')
+            lines.append(tr('Сохранённые пароли Claude в Windows: {n}', n=result["credentials"]))
         if self.browsers.get():
-            lines.append('Вход на claude.ai в Chrome и Edge')
-        text = ('Это нельзя отменить. ' + ('Память Claude Code вернётся на место после очистки. ' if keep else 'Ничего не сохранится. ')
-                + ('Перед удалением программа закроет Claude и сохранит копии ваших файлов. ' if auto else '')
-                + 'Будет удалено:')
-        if not self.confirm('Стереть данные Claude?', text, 'Стереть', lines=lines, typed='СТЕРЕТЬ'):
+            lines.append(tr('Вход на claude.ai в Chrome и Edge'))
+        text = (tr('Это нельзя отменить. ') + (tr('Память Claude Code вернётся на место после очистки. ') if keep else tr('Ничего не сохранится. '))
+                + (tr('Перед удалением программа закроет Claude и сохранит копии ваших файлов. ') if auto else '')
+                + tr('Будет удалено:'))
+        if not self.confirm(tr('Стереть данные Claude?'), text, tr('Стереть'), lines=lines, typed=tr('СТЕРЕТЬ')):
             return
         session, browsers = self.session, self.browsers.get()
 
@@ -859,8 +884,8 @@ class Shell:
 
     def reset_done(self, outcome):
         if outcome['stage'] == 'blocked':
-            self.ask('Остановились перед удалением', 'Не всё получилось сделать автоматически. Ничего не удалено. '
-                     'Посмотрите, что осталось сделать, и нажмите «Проверить снова».')
+            self.ask(tr('Остановились перед удалением'), tr('Не всё получилось сделать автоматически. Ничего не удалено. '
+                     'Посмотрите, что осталось сделать, и нажмите «Проверить снова».'))
             self.reset_checked(outcome['check'], False)
             return
         result = outcome['result']
@@ -868,70 +893,70 @@ class Shell:
         self.clear(self.reset_result)
         card = self.card(self.reset_result)
         if result['status'] == 'failed':
-            self.label(card, 'Стирание остановилось', 'h2', bg='marble')
-            self.label(card, 'Часть данных могла остаться. Копия памяти, если вы её сохраняли, не потеряна. '
-                       'Нажмите «Проверить и очистить» ещё раз; если ошибка повторится — сохраните отчёт на странице «Помощь».',
+            self.label(card, tr('Стирание остановилось'), 'h2', bg='marble')
+            self.label(card, tr('Часть данных могла остаться. Копия памяти, если вы её сохраняли, не потеряна. '
+                       'Нажмите «Проверить и очистить» ещё раз; если ошибка повторится — сохраните отчёт на странице «Помощь».'),
                        bg='marble', pady=(px(6), 0))
             return
-        self.label(card, 'Готово ✓' if result['no_files_left'] else 'Почти готово', 'h2', bg='marble')
-        lines = ['Данные Claude стёрты. В проверенных папках ничего не осталось.' if result['no_files_left']
-                 else 'Данные стёрты, но в проверенных папках что-то осталось. Нажмите «Проверить и очистить» ещё раз.']
+        self.label(card, tr('Готово ✓') if result['no_files_left'] else tr('Почти готово'), 'h2', bg='marble')
+        lines = [tr('Данные Claude стёрты. В проверенных папках ничего не осталось.') if result['no_files_left']
+                 else tr('Данные стёрты, но в проверенных папках что-то осталось. Нажмите «Проверить и очистить» ещё раз.')]
         if result.get('memory') == 'restored_verbatim':
-            lines.append('Память Claude Code возвращена на место.')
+            lines.append(tr('Память Claude Code возвращена на место.'))
         if result.get('passwords_removed'):
-            lines.append(f'Удалено сохранённых паролей Claude: {result["passwords_removed"]}.')
-        lines.append({'reset': 'Ключ устройства Claude Desktop сброшен: Desktop увидит новое устройство.',
-                      'not_supported': 'Ключ устройства Claude Desktop не сброшен: эта версия Desktop ещё не проверена. '
-                                       'Desktop может узнать этот компьютер.',
-                      'failed': 'Ключ устройства Claude Desktop не сброшен из-за ошибки.'}.get(result.get('desktop_keys'), ''))
-        lines.append({'cleared': 'Вы вышли из claude.ai в Chrome и Edge.',
-                      'browsers_open': 'Chrome или Edge были открыты, поэтому вход на claude.ai там остался.',
-                      'failed': 'Выйти из claude.ai в браузерах не получилось.'}.get(result.get('browsers'), ''))
+            lines.append(tr('Удалено сохранённых паролей Claude: {n}.', n=result["passwords_removed"]))
+        lines.append({'reset': tr('Ключ устройства Claude Desktop сброшен: Desktop увидит новое устройство.'),
+                      'not_supported': tr('Ключ устройства Claude Desktop не сброшен: эта версия Desktop ещё не проверена. '
+                                       'Desktop может узнать этот компьютер.'),
+                      'failed': tr('Ключ устройства Claude Desktop не сброшен из-за ошибки.')}.get(result.get('desktop_keys'), ''))
+        lines.append({'cleared': tr('Вы вышли из claude.ai в Chrome и Edge.'),
+                      'browsers_open': tr('Chrome или Edge были открыты, поэтому вход на claude.ai там остался.'),
+                      'failed': tr('Выйти из claude.ai в браузерах не получилось.')}.get(result.get('browsers'), ''))
         for line in filter(None, lines):
             self.label(card, line, bg='marble', pady=(px(4), 0))
-        self.label(card, 'Проверьте вручную', 'h3', bg='marble', pady=(px(18), px(6)))
+        self.label(card, tr('Проверьте вручную'), 'h3', bg='marble', pady=(px(18), px(6)))
         for line in OUTSIDE:
-            self.label(card, '•  ' + line, 'small', bg='marble')
+            self.label(card, '•  ' + tr(line), 'small', bg='marble')
         buttons = ttk.Frame(card, style='Marble.TFrame')
         buttons.pack(anchor='w', pady=(px(18), 0))
-        self.button(buttons, 'Дальше: прокси и защита →', lambda: self.show('proxy'), bg='marble').pack(side='left')
+        self.button(buttons, tr('Дальше: прокси и защита →'), lambda: self.show('proxy'), bg='marble').pack(side='left')
         if result.get('browsers') in ('browsers_open', 'failed'):
-            self.button(buttons, 'Выйти из claude.ai в браузерах', self.clear_browsers, kind='Ghost', bg='marble').pack(side='left', padx=(px(10), 0))
+            self.button(buttons, tr('Выйти из claude.ai в браузерах'), self.clear_browsers, kind='Ghost', bg='marble').pack(side='left', padx=(px(10), 0))
         self.session = None
 
     def clear_browsers(self):
-        if not self.confirm('Выйти из claude.ai в браузерах?', 'Сначала закройте Chrome и Edge. Профили браузеров и другие сайты '
-                            'не пострадают — удаляются только cookies и данные claude.ai.', 'Выйти', typed='СТЕРЕТЬ'):
+        if not self.confirm(tr('Выйти из claude.ai в браузерах?'), tr('Сначала закройте Chrome и Edge. Профили браузеров и другие сайты '
+                            'не пострадают — удаляются только cookies и данные claude.ai.'), tr('Выйти'), typed=tr('СТЕРЕТЬ')):
             return
         actions = reset_flow.Actions(self.paths)
         self.run(lambda step: step('browsers', actions.clear_browsers), lambda r: self.ask(
-            'Браузеры', {'cleared': 'Готово ✓ Вы вышли из claude.ai в Chrome и Edge.',
-                         'browsers_open': 'Chrome или Edge ещё открыты. Закройте их полностью и повторите.'}.get(
-                r, 'Не получилось. Повторите после закрытия браузеров.')))
+            tr('Браузеры'), {'cleared': tr('Готово ✓ Вы вышли из claude.ai в Chrome и Edge.'),
+                         'browsers_open': tr('Chrome или Edge ещё открыты. Закройте их полностью и повторите.')}.get(
+                r, tr('Не получилось. Повторите после закрытия браузеров.'))))
 
     def open_startup(self):
         from .diagnostics import open_settings
         try:
             open_settings('startup')
         except Exception:
-            self.ask('Не открылось', 'Откройте вручную: Параметры Windows → Приложения → Автозагрузка.')
+            self.ask(tr('Не открылось'), tr('Откройте вручную: Параметры Windows → Приложения → Автозагрузка.'))
 
     # ----- proxy -----
     def build_proxy(self, page):
         px = self.theme.px
-        self.label(page, 'ШАГ 2 · ПРОКСИ И ЗАЩИТА', 'tag')
-        self.label(page, 'Прокси и защита', 'h1', pady=(px(6), px(8)))
-        self.label(page, 'Защита пускает Claude в интернет только через ваш прокси. Остальные программы — браузер, игры, '
-                   'Discord — работают как обычно.', 'lead', pady=(0, px(24)))
+        self.label(page, tr('ШАГ 2 · ПРОКСИ И ЗАЩИТА'), 'tag')
+        self.label(page, tr('Прокси и защита'), 'h1', pady=(px(6), px(8)))
+        self.label(page, tr('Защита пускает Claude в интернет только через ваш прокси. Остальные программы — браузер, игры, '
+                   'Discord — работают как обычно.'), 'lead', pady=(0, px(24)))
         self.proxy_state = self.card(page, pady=(0, px(28)))
-        self.label(page, 'Ваш прокси', 'h3', pady=(0, px(4)))
-        self.form_hint = self.label(page, 'Данные выдаёт ваш провайдер прокси. Пароль хранится только на этом компьютере в зашифрованном виде.',
+        self.label(page, tr('Ваш прокси'), 'h3', pady=(0, px(4)))
+        self.form_hint = self.label(page, tr('Данные выдаёт ваш провайдер прокси. Пароль хранится только на этом компьютере в зашифрованном виде.'),
                                     'small', pady=(0, px(14)))
         self.proxy_kind = tk.StringVar(master=self.root, value='socks5')
         chips = ttk.Frame(page, style='Paper.TFrame')
         chips.pack(anchor='w', pady=(0, px(16)))
         self.chips = {}
-        for value, label in (('socks5', 'SOCKS5'), ('http', 'HTTP'), ('vless', 'VLESS — файл профиля')):
+        for value, label in (('socks5', 'SOCKS5'), ('http', 'HTTP'), ('vless', tr('VLESS — файл профиля'))):
             chip = ttk.Button(chips, text=label, command=lambda v=value: self.proxy_kind.set(v), style='Chip.Paper.TButton')
             chip.pack(side='left', padx=(0, px(8)))
             self.chips[value] = chip
@@ -942,8 +967,8 @@ class Shell:
         grid = ttk.Frame(self.form, style='Paper.TFrame')
         grid.pack(anchor='w')
         for index, (key, label, hint, width) in enumerate((
-                ('host', 'Адрес сервера', 'Например 203.0.113.10', 22), ('port', 'Порт', 'Например 1080', 8),
-                ('username', 'Логин', 'Если выдан', 18), ('password', 'Пароль', 'Если выдан', 18))):
+                ('host', tr('Адрес сервера'), tr('Например 203.0.113.10'), 22), ('port', tr('Порт'), tr('Например 1080'), 8),
+                ('username', tr('Логин'), tr('Если выдан'), 18), ('password', tr('Пароль'), tr('Если выдан'), 18))):
             cell = ttk.Frame(grid, style='Paper.TFrame')
             cell.grid(row=index // 2, column=index % 2, sticky='w', padx=(0, px(20)), pady=(0, px(14)))
             ttk.Label(cell, text=label, style='Paper.strong.TLabel').pack(anchor='w')
@@ -953,25 +978,25 @@ class Shell:
         self.vless = ttk.Frame(page, style='Paper.TFrame')
         self.vless_file = tk.StringVar(master=self.root)
         self.vless_archive = tk.StringVar(master=self.root)
-        for label, variable, title, types in (('Файл профиля VLESS (.json)', self.vless_file, 'Профиль VLESS+Reality', [('JSON', '*.json')]),
-                                              ('Архив движка — если есть; иначе скачаем сами', self.vless_archive, 'Архив движка', [('ZIP', '*.zip')])):
+        for label, variable, title, types in ((tr('Файл профиля VLESS (.json)'), self.vless_file, tr('Профиль VLESS+Reality'), [('JSON', '*.json')]),
+                                              (tr('Архив движка — если есть; иначе скачаем сами'), self.vless_archive, tr('Архив движка'), [('ZIP', '*.zip')])):
             line = ttk.Frame(self.vless, style='Paper.TFrame')
             line.pack(anchor='w', pady=(0, px(12)))
             ttk.Label(line, text=label, style='Paper.strong.TLabel').pack(anchor='w')
             row = ttk.Frame(line, style='Paper.TFrame')
             row.pack(anchor='w', pady=(px(6), 0))
-            self.small_button(row, 'Выбрать файл…', lambda v=variable, t=title, f=types: v.set(
+            self.small_button(row, tr('Выбрать файл…'), lambda v=variable, t=title, f=types: v.set(
                 filedialog.askopenfilename(title=t, filetypes=f) or v.get())).pack(side='left')
             ttk.Label(row, textvariable=variable, style='Paper.small.TLabel').pack(side='left', padx=(px(10), 0))
         self.form_end = ttk.Frame(page, style='Paper.TFrame')
         self.form_end.pack(fill='x')
         self.protect_extension = tk.BooleanVar(master=self.root, value=False)
-        ttk.Checkbutton(self.form_end, text='Также защищать Claude Code внутри VS Code', variable=self.protect_extension,
+        ttk.Checkbutton(self.form_end, text=tr('Также защищать Claude Code внутри VS Code'), variable=self.protect_extension,
                         style='Paper.TCheckbutton').pack(anchor='w', pady=(px(4), 0))
-        self.label(self.form_end, 'После включения перезагрузите окно VS Code: Ctrl+Shift+P → «Reload Window», '
-                   'затем продолжите разговор командой /resume.', 'small', pady=(px(2), px(20)))
+        self.label(self.form_end, tr('После включения перезагрузите окно VS Code: Ctrl+Shift+P → «Reload Window», '
+                   'затем продолжите разговор командой /resume.'), 'small', pady=(px(2), px(20)))
         self.proxy_error = self.label(self.form_end, '', 'bad', pady=(0, px(10)))
-        self.proxy_button = self.button(self.form_end, 'Проверить и включить защиту', self.proxy_go)
+        self.proxy_button = self.button(self.form_end, tr('Проверить и включить защиту'), self.proxy_go)
         self.proxy_button.pack(anchor='w')
         self.paint_form()
 
@@ -1003,34 +1028,34 @@ class Shell:
         color = {'on': 'good', 'problem': 'bad', 'partial': 'bad', 'paused': 'graphite2'}.get(state, 'stone')
         ttk.Label(head, image=self.theme.image(f'dot-{color}', brand.dot(px(10), C[color], background=C['marble'])),
                   style='Marble.body.TLabel').pack(side='left')
-        ttk.Label(head, text=summary['title'], style='Marble.h2.TLabel').pack(side='left', padx=(px(12), 0))
-        self.label(frame, summary['text'], bg='marble', pady=(px(6), px(4)))
+        ttk.Label(head, text=tr(summary['title']), style='Marble.h2.TLabel').pack(side='left', padx=(px(12), 0))
+        self.label(frame, tr(summary['text']), bg='marble', pady=(px(6), px(4)))
         if summary.get('proxy'):
-            self.label(frame, f'Прокси: {summary["proxy"]}', 'small', bg='marble')
-        clients = ' · '.join(c['name'] for c in summary['clients'] if c['present'])
+            self.label(frame, tr('Прокси: {name}', name=summary["proxy"]), 'small', bg='marble')
+        clients = ' · '.join(tr(c['name']) for c in summary['clients'] if c['present'])
         if clients and state != 'unknown':
-            self.label(frame, ('Под защитой: ' if state == 'on' else 'Найдены: ') + clients, 'small', bg='marble')
+            self.label(frame, (tr('Под защитой: ') if state == 'on' else tr('Найдены: ')) + clients, 'small', bg='marble')
         buttons = ttk.Frame(frame, style='Marble.TFrame')
         buttons.pack(anchor='w', pady=(px(16), 0))
         if summary.get('fix'):
-            self.button(buttons, proxy_flow.FIXES[summary['fix']], lambda f=summary['fix']: self.proxy_fix(f), bg='marble').pack(side='left', padx=(0, px(10)))
+            self.button(buttons, tr(proxy_flow.FIXES[summary['fix']]), lambda f=summary['fix']: self.proxy_fix(f), bg='marble').pack(side='left', padx=(0, px(10)))
         if state == 'on':
-            self.button(buttons, 'Проверить сейчас', self.refresh_proxy, kind='Ghost', bg='marble').pack(side='left', padx=(0, px(10)))
-            self.button(buttons, 'Перезапустить', lambda: self.proxy_fix('restart'), kind='Ghost', bg='marble').pack(side='left', padx=(0, px(10)))
+            self.button(buttons, tr('Проверить сейчас'), self.refresh_proxy, kind='Ghost', bg='marble').pack(side='left', padx=(0, px(10)))
+            self.button(buttons, tr('Перезапустить'), lambda: self.proxy_fix('restart'), kind='Ghost', bg='marble').pack(side='left', padx=(0, px(10)))
         if state in ('on', 'problem', 'partial', 'paused'):
-            self.button(buttons, 'Выключить защиту', self.protection_off, kind='Ghost', bg='marble').pack(side='left', padx=(0, px(10)))
+            self.button(buttons, tr('Выключить защиту'), self.protection_off, kind='Ghost', bg='marble').pack(side='left', padx=(0, px(10)))
         if state == 'unknown':
-            self.button(buttons, 'Обновить', self.refresh_proxy, kind='Ghost', bg='marble').pack(side='left')
+            self.button(buttons, tr('Обновить'), self.refresh_proxy, kind='Ghost', bg='marble').pack(side='left')
         if state == 'off' and summary.get('proxy_saved'):
-            self.button(buttons, 'Удалить сохранённый прокси', self.backend_remove, kind='Ghost', bg='marble').pack(side='left')
+            self.button(buttons, tr('Удалить сохранённый прокси'), self.backend_remove, kind='Ghost', bg='marble').pack(side='left')
         if state == 'on':
             extra = ttk.Frame(frame, style='Marble.TFrame')
             extra.pack(anchor='w', pady=(px(10), 0))
-            self.button(extra, 'Обновить защиту после обновления программы', lambda: self.protection_install('reinstall'),
+            self.button(extra, tr('Обновить защиту после обновления программы'), lambda: self.protection_install('reinstall'),
                         kind='Small', bg='marble').pack(side='left', padx=(0, px(10)))
-            self.button(extra, 'Применить выбор для VS Code', self.extension_apply, kind='Small', bg='marble').pack(side='left')
+            self.button(extra, tr('Применить выбор для VS Code'), self.extension_apply, kind='Small', bg='marble').pack(side='left')
         installed = state in ('on', 'problem')
-        self.proxy_button.configure(text='Проверить и применить новый прокси' if installed else 'Проверить и включить защиту')
+        self.proxy_button.configure(text=tr('Проверить и применить новый прокси') if installed else tr('Проверить и включить защиту'))
 
     def proxy_go(self):
         self.proxy_error.configure(text='')
@@ -1039,40 +1064,40 @@ class Shell:
         values = {k: v.get().strip() if k in ('host', 'port') else v.get() for k, v in self.fields.items()}
         checked, error = proxy_flow.draft(self.proxy_kind.get(), values['host'], values['port'], values['username'], values['password'])
         if error:
-            self.proxy_error.configure(text=error)
+            self.proxy_error.configure(text=tr(error))
             return
         self.run(lambda step: step('proxy_check', checked.check), lambda outcome: self.proxy_checked(checked, outcome))
 
     def proxy_checked(self, checked, outcome):
         if outcome.get('status') != 'proxy_checked':
-            self.proxy_error.configure(text=proxy_flow.message(outcome.get('status')))
+            self.proxy_error.configure(text=tr(proxy_flow.message(outcome.get('status'))))
             return
         if not self.confirm_exit(checked):
             return
         if self.protection.get('state') in ('on', 'problem'):
-            if self.confirm('Применить новый прокси?', 'Защита перезапустится. Claude на несколько секунд останется без сети.', 'Применить'):
+            if self.confirm(tr('Применить новый прокси?'), tr('Защита перезапустится. Claude на несколько секунд останется без сети.'), tr('Применить')):
                 self.run(lambda step: step('change', lambda: proxy_flow.connect(self.paths, checked, installed=True)), self.proxy_connected)
             return
         self.protection_install('install', checked)
 
     def confirm_exit(self, checked):
         address = checked.expected['expected_exit_ips'][0]
-        return self.confirm('Прокси работает ✓', 'Claude будет выходить в интернет с этого адреса. Он совпадает с тем, '
-                            'что выдал ваш провайдер прокси?', 'Да, всё верно', no='Нет', lines=[address])
+        return self.confirm(tr('Прокси работает ✓'), tr('Claude будет выходить в интернет с этого адреса. Он совпадает с тем, '
+                            'что выдал ваш провайдер прокси?'), tr('Да, всё верно'), no=tr('Нет'), lines=[address])
 
     def protection_install(self, action, checked=None):
         from . import protection_panel
 
         def consent(limits):
             if not limits['known']:
-                self.ask('Нужна новая версия', 'Список того, что защита не закрывает, изменился. Включите защиту в «Режиме для специалистов».')
+                self.ask(tr('Нужна новая версия'), tr('Список того, что защита не закрывает, изменился. Включите защиту в «Режиме для специалистов».'))
                 return
-            title = 'Перед включением' if action == 'install' else 'Включить защиту заново?'
-            text = ('Защита закрывает собственные соединения Claude. Вот что она не закрывает — это ограничения Windows, '
-                    'а не ошибки. Windows попросит разрешение: нажмите «Да».')
+            title = tr('Перед включением') if action == 'install' else tr('Включить защиту заново?')
+            text = (tr('Защита закрывает собственные соединения Claude. Вот что она не закрывает — это ограничения Windows, '
+                    'а не ошибки. Windows попросит разрешение: нажмите «Да».'))
             if action == 'reinstall':
-                text = 'Программа поставит защиту текущей версии и включит её. ' + text
-            if not self.confirm(title, text, 'Включить защиту', lines=limits['lines']):
+                text = tr('Программа поставит защиту текущей версии и включит её. ') + text
+            if not self.confirm(title, text, tr('Включить защиту'), lines=limits['lines']):
                 return
             extension = bool(self.protect_extension.get())
             if checked is not None:
@@ -1085,17 +1110,17 @@ class Shell:
         self.run(lambda step: step('limits', lambda: protection_panel.limits(self.paths)), consent)
 
     def proxy_connected(self, result):
-        self.ask('Готово' if result.get('ok') else 'Не получилось', result['text'])
+        self.ask(tr('Готово') if result.get('ok') else tr('Не получилось'), tr_text(result['text']))
         self.root.after(200, self.refresh_proxy)
 
     def engine_go(self):
         from .proxy_form import LocalBackendDraft, install_engine
         profile = self.vless_file.get()
         if not profile:
-            self.proxy_error.configure(text='Выберите файл профиля VLESS.')
+            self.proxy_error.configure(text=tr('Выберите файл профиля VLESS.'))
             return
         if self.protection.get('state') in ('on', 'problem'):
-            self.ask('Сначала выключите защиту', 'Чтобы перейти на VLESS, выключите защиту, затем установите профиль.')
+            self.ask(tr('Сначала выключите защиту'), tr('Чтобы перейти на VLESS, выключите защиту, затем установите профиль.'))
             return
         archive = self.vless_archive.get() or None
         checked = LocalBackendDraft(self.paths, first=True)
@@ -1110,14 +1135,14 @@ class Shell:
     def proxy_fix(self, fix):
         from . import protection_panel
         if fix == 'reenter':
-            self.status.set('Введите данные прокси ниже и нажмите «Проверить и применить новый прокси».')
+            self.status.set(tr('Введите данные прокси ниже и нажмите «Проверить и применить новый прокси».'))
             return
         if fix == 'install':
             return self.protection_install('install')
         if fix == 'resume':
             return self.protection_install('reinstall')
         if fix == 'restart':
-            if self.confirm('Перезапустить защиту?', 'Claude на несколько секунд останется без сети.', 'Перезапустить'):
+            if self.confirm(tr('Перезапустить защиту?'), tr('Claude на несколько секунд останется без сети.'), tr('Перезапустить')):
                 self.run(lambda step: {'text': step('restart', lambda: protection_panel.perform(
                     self.paths, 'restart', confirmed=True))['text'], 'ok': True}, self.proxy_connected)
             return
@@ -1125,7 +1150,7 @@ class Shell:
         def checked_again(pair):
             checked, info = pair
             if checked is None:
-                self.ask('Прокси не работает', info['text'] + ' Если не поможет — введите прокси заново ниже.')
+                self.ask(tr('Прокси не работает'), tr(info['text']) + tr(' Если не поможет — введите прокси заново ниже.'))
                 return
             if info['same_exit']:
                 self.run(lambda step: {'text': step('restart', lambda: protection_panel.perform(
@@ -1136,42 +1161,42 @@ class Shell:
 
     def protection_off(self):
         from . import protection_panel
-        if self.confirm('Выключить защиту?', 'Claude снова будет выходить в интернет напрямую, без прокси. '
-                        'Сохранённый прокси и адрес выхода тоже будут удалены. Windows попросит разрешение.', 'Выключить'):
+        if self.confirm(tr('Выключить защиту?'), tr('Claude снова будет выходить в интернет напрямую, без прокси. '
+                        'Сохранённый прокси и адрес выхода тоже будут удалены. Windows попросит разрешение.'), tr('Выключить')):
             self.run(lambda step: {'text': step('remove', lambda: protection_panel.perform(
                 self.paths, 'remove', confirmed=True), uac=True)['text'], 'ok': True}, self.proxy_connected)
 
     def extension_apply(self):
         from . import protection_panel
         value = bool(self.protect_extension.get())
-        text = ('Claude Code в VS Code тоже будет выходить только через прокси.' if value
-                else 'Claude Code в VS Code снова будет выходить напрямую.')
-        if self.confirm('Применить выбор для VS Code?', text + ' Сохраните работу: после применения перезагрузите окно VS Code '
-                        '(Ctrl+Shift+P → «Reload Window») и продолжите командой /resume.', 'Применить'):
+        text = (tr('Claude Code в VS Code тоже будет выходить только через прокси.') if value
+                else tr('Claude Code в VS Code снова будет выходить напрямую.'))
+        if self.confirm(tr('Применить выбор для VS Code?'), text + tr(' Сохраните работу: после применения перезагрузите окно VS Code '
+                        '(Ctrl+Shift+P → «Reload Window») и продолжите командой /resume.'), tr('Применить')):
             self.run(lambda step: {'text': step('extension', lambda: protection_panel.perform(
                 self.paths, 'extension', confirmed=True, protect_extension=value), uac=not value)['text'], 'ok': True},
                 self.proxy_connected)
 
     def backend_remove(self):
         from .proxy_form import remove_backend
-        if self.confirm('Удалить сохранённый прокси?', 'Адрес, логин и пароль прокси будут удалены с этого компьютера.', 'Удалить'):
+        if self.confirm(tr('Удалить сохранённый прокси?'), tr('Адрес, логин и пароль прокси будут удалены с этого компьютера.'), tr('Удалить')):
             self.run(lambda step: step('backend_remove', lambda: remove_backend(self.paths)),
-                     lambda r: (self.ask('Прокси', proxy_flow.message(r['status'])), self.refresh_proxy()))
+                     lambda r: (self.ask(tr('Прокси'), tr(proxy_flow.message(r['status']))), self.refresh_proxy()))
 
     # ----- help -----
     def build_help(self, page):
         px = self.theme.px
-        self.label(page, 'ПОМОЩЬ', 'tag')
-        self.label(page, 'Помощь', 'h1', pady=(px(6), px(24)))
+        self.label(page, tr('ПОМОЩЬ'), 'tag')
+        self.label(page, tr('Помощь'), 'h1', pady=(px(6), px(24)))
         for title, text, buttons in (
-                ('Руководство', 'Пошагово: сброс, прокси, вход в новый аккаунт.',
-                 (('Primary', 'Открыть руководство', lambda: self.open_doc('guide')),)),
-                ('Что-то не работает', 'Сохраните отчёт и отправьте тому, кто вам помогает. В отчёте нет паролей, '
-                 'адресов прокси и имени пользователя.', (('Primary', 'Сохранить отчёт', self.save_report),)),
-                ('Язык и часовой пояс', 'Сайты сравнивают часовой пояс и язык компьютера со страной, из которой вы заходите. '
-                 'Укажите страну вашего прокси: DE, TR или GB.', ()),
-                ('Ограничения и лицензии', 'Что защита не закрывает и чьи компоненты использует программа.',
-                 (('Ghost', 'Ограничения', lambda: self.open_doc('limits')), ('Ghost', 'Лицензии', lambda: self.open_doc('licenses'))))):
+                (tr('Руководство'), tr('Пошагово: сброс, прокси, вход в новый аккаунт.'),
+                 (('Primary', tr('Открыть руководство'), lambda: self.open_doc('guide')),)),
+                (tr('Что-то не работает'), tr('Сохраните отчёт и отправьте тому, кто вам помогает. В отчёте нет паролей, '
+                 'адресов прокси и имени пользователя.'), (('Primary', tr('Сохранить отчёт'), self.save_report),)),
+                (tr('Язык и часовой пояс'), tr('Сайты сравнивают часовой пояс и язык компьютера со страной, из которой вы заходите. '
+                 'Укажите страну вашего прокси: DE, TR или GB.'), ()),
+                (tr('Ограничения и лицензии'), tr('Что защита не закрывает и чьи компоненты использует программа.'),
+                 (('Ghost', tr('Ограничения'), lambda: self.open_doc('limits')), ('Ghost', tr('Лицензии'), lambda: self.open_doc('licenses'))))):
             card = self.card(page, pady=(0, px(16)))
             self.label(card, title, 'h3', bg='marble')
             self.label(card, text, bg='marble', pady=(px(6), px(14)))
@@ -1179,29 +1204,35 @@ class Shell:
             row.pack(anchor='w')
             for kind, label, command in buttons:
                 self.button(row, label, command, kind=kind, bg='marble').pack(side='left', padx=(0, px(10)))
-            if title == 'Язык и часовой пояс':
+            if title == tr('Язык и часовой пояс'):
                 self.country = tk.StringVar(master=self.root)
                 ttk.Entry(row, textvariable=self.country, style='Brand.TEntry', width=6, font=self.theme.fonts['field']).pack(side='left', padx=(0, px(10)))
-                self.button(row, 'Сравнить', self.advice, kind='Small', bg='marble').pack(side='left', padx=(0, px(10)))
-                self.button(row, 'Настройки времени', lambda: self.settings('timezone'), kind='Small', bg='marble').pack(side='left', padx=(0, px(10)))
-                self.button(row, 'Настройки языка', lambda: self.settings('language'), kind='Small', bg='marble').pack(side='left')
+                self.button(row, tr('Сравнить'), self.advice, kind='Small', bg='marble').pack(side='left', padx=(0, px(10)))
+                self.button(row, tr('Настройки времени'), lambda: self.settings('timezone'), kind='Small', bg='marble').pack(side='left', padx=(0, px(10)))
+                self.button(row, tr('Настройки языка'), lambda: self.settings('language'), kind='Small', bg='marble').pack(side='left')
                 self.advice_text = self.label(card, '', 'small', bg='marble', pady=(px(10), 0))
         card = self.card(page, pady=(0, px(16)))
-        self.label(card, 'Оформление', 'h3', bg='marble')
-        self.label(card, 'Тема окна. Клавиши: Tab — следующая кнопка, Enter — нажать, Alt+1…4 — страницы.',
+        self.label(card, tr('Оформление'), 'h3', bg='marble')
+        self.label(card, tr('Тема и язык окна. Клавиши: Tab — следующая кнопка, Enter — нажать, Alt+1…4 — страницы.'),
                    bg='marble', pady=(px(6), px(14)))
         row = ttk.Frame(card, style='Marble.TFrame')
         row.pack(anchor='w')
-        for value, label in (('system', 'Как в Windows'), ('light', 'Светлая'), ('dark', 'Тёмная')):
+        for value, label in (('system', tr('Как в Windows')), ('light', tr('Светлая')), ('dark', tr('Тёмная'))):
             style = 'ChipOn.Marble.TButton' if value == self.theme_choice else 'Chip.Marble.TButton'
             ttk.Button(row, text=label, style=style, command=lambda v=value: self.set_theme(v)).pack(side='left', padx=(0, px(8)))
+        row = ttk.Frame(card, style='Marble.TFrame')
+        row.pack(anchor='w', pady=(px(10), 0))
+        # Language names are written in their own language so a person who cannot read the other one finds theirs.
+        for value, label in (('ru', 'Русский'), ('en', 'English')):
+            style = 'ChipOn.Marble.TButton' if value == self.language_choice else 'Chip.Marble.TButton'
+            ttk.Button(row, text=label, style=style, command=lambda v=value: self.set_language_choice(v)).pack(side='left', padx=(0, px(8)))
         from .program_setup import installation
         if installation() is not None:
             card = self.card(page, pady=(0, px(16)))
-            self.label(card, 'Удалить программу', 'h3', bg='marble')
-            self.label(card, 'Сначала выключит защиту, если она включена, затем удалит ClaudeReset, его ярлыки и запись '
-                       'в «Приложениях». Сохранённые копии памяти останутся.', bg='marble', pady=(px(6), px(14)))
-            self.button(card, 'Удалить ClaudeReset', self.uninstall_program, kind='Ghost', bg='marble').pack(anchor='w')
+            self.label(card, tr('Удалить программу'), 'h3', bg='marble')
+            self.label(card, tr('Сначала выключит защиту, если она включена, затем удалит ClaudeReset, его ярлыки и запись '
+                       'в «Приложениях». Сохранённые копии памяти останутся.'), bg='marble', pady=(px(6), px(14)))
+            self.button(card, tr('Удалить ClaudeReset'), self.uninstall_program, kind='Ghost', bg='marble').pack(anchor='w')
 
     def uninstall_program(self):
         from . import program_setup
@@ -1209,36 +1240,38 @@ class Shell:
 
         def planned(plan):
             if not plan['installed']:
-                self.ask('Удаление', 'Эта копия не установлена установщиком. Чтобы убрать её, удалите её папку.')
+                self.ask(tr('Удаление'), tr('Эта копия не установлена установщиком. Чтобы убрать её, удалите её папку.'))
                 return
-            text = ('ClaudeReset будет удалён с компьютера. '
-                    + ('Сначала программа выключит защиту: Claude снова будет выходить в интернет напрямую, '
-                       'а Windows попросит разрешение. ' if plan['protection'] else ''))
-            lines = ['Ярлыки и запись в «Приложениях»', 'Папка программы']
+            text = (tr('ClaudeReset будет удалён с компьютера. ')
+                    + (tr('Сначала программа выключит защиту: Claude снова будет выходить в интернет напрямую, '
+                       'а Windows попросит разрешение. ') if plan['protection'] else ''))
+            lines = [tr('Ярлыки и запись в «Приложениях»'), tr('Папка программы')]
             if plan['archives']:
-                text += 'Копии памяти и отчёты останутся в папке ниже — удалите её сами, если они не нужны.'
-            if not self.confirm('Удалить ClaudeReset?', text, 'Удалить', lines=lines + (
-                    [plan['archives_folder']] if plan['archives'] else []), typed='УДАЛИТЬ'):
+                text += tr('Копии памяти и отчёты останутся в папке ниже — удалите её сами, если они не нужны.')
+            if not self.confirm(tr('Удалить ClaudeReset?'), text, tr('Удалить'), lines=lines + (
+                    [plan['archives_folder']] if plan['archives'] else []), typed=tr('УДАЛИТЬ')):
                 return
             self.run(lambda step: program_setup.uninstall(self.paths, step=step), finished, uac_steps=('remove',))
 
         def finished(result):
             if result['status'] == 'removed':
-                self.ask('ClaudeReset удалён', 'Окно закроется, папка программы удалится через несколько секунд.')
+                self.ask(tr('ClaudeReset удалён'), tr('Окно закроется, папка программы удалится через несколько секунд.'))
                 self.root.destroy()
             elif result['status'] == 'protection_not_removed':
-                self.ask('Удаление остановлено', 'Защиту выключить не удалось, поэтому программа не удалена: '
-                         'иначе Claude мог остаться без сети. Попробуйте ещё раз или выключите защиту на шаге 2.')
+                self.ask(tr('Удаление остановлено'), tr('Защиту выключить не удалось, поэтому программа не удалена: '
+                         'иначе Claude мог остаться без сети. Попробуйте ещё раз или выключите защиту на шаге 2.'))
             else:
-                self.ask('Удаление', 'Эта копия не установлена установщиком. Чтобы убрать её, удалите её папку.')
+                self.ask(tr('Удаление'), tr('Эта копия не установлена установщиком. Чтобы убрать её, удалите её папку.'))
         self.run(lambda step: step('summary', lambda: program_setup.plan(self.paths)), planned)
 
     def open_doc(self, kind):
         from .help_docs import read_document
+        from .ui_text import language
         try:
-            title, content = read_document(kind)
+            title, content = read_document(kind, language())
+            title = tr(title)
         except Exception:
-            self.ask('Справка недоступна', 'Файл справки не найден рядом с программой.')
+            self.ask(tr('Справка недоступна'), tr('Файл справки не найден рядом с программой.'))
             return
         px = self.theme.px
         window = tk.Toplevel(self.root, background=C['paper'])
@@ -1248,7 +1281,7 @@ class Shell:
         window.transient(self.root)
         foot = ttk.Frame(window, style='Paper.TFrame', padding=px(16))
         foot.pack(side='bottom', fill='x')
-        ttk.Button(foot, text='Закрыть', command=window.destroy, style='Ghost.Paper.TButton').pack(side='right')
+        ttk.Button(foot, text=tr('Закрыть'), command=window.destroy, style='Ghost.Paper.TButton').pack(side='right')
         bar = ttk.Scrollbar(window, orient='vertical', style='Brand.Vertical.TScrollbar')
         bar.pack(side='right', fill='y')
         text = tk.Text(window, wrap='word', font=self.theme.fonts['body'], background=C['paper'], foreground=C['graphite'],
@@ -1310,13 +1343,13 @@ class Shell:
         from .safeio import atomic_json
 
         def done(report):
-            file = filedialog.asksaveasfilename(title='Сохранить отчёт', defaultextension='.json',
+            file = filedialog.asksaveasfilename(title=tr('Сохранить отчёт'), defaultextension='.json',
                                                 initialfile='claudereset-report.json', filetypes=[('JSON', '*.json')])
             if file:
                 from .public_view import redact
                 path = Path(file)
                 atomic_json(path, redact(report), path.parent)
-                self.status.set('Отчёт сохранён. В нём нет паролей, адресов прокси и имени пользователя.')
+                self.status.set(tr('Отчёт сохранён. В нём нет паролей, адресов прокси и имени пользователя.'))
         self.run(lambda step: step('report', lambda: collect(self.paths)), done)
 
     def advice(self):
@@ -1325,10 +1358,10 @@ class Shell:
         self.run(lambda step: step('advice', lambda: advise(country)), self.show_advice)
 
     def show_advice(self, result):
-        text = result.get('text', '')
+        text = tr(result.get('text', ''))
         if result.get('status') == 'compared':
-            text += ' Пояс: ' + ('совпадает ✓' if result['timezone_matches'] else 'не совпадает') + '. Язык: ' + (
-                'совпадает ✓' if result['language_matches'] else 'не совпадает — это ваш выбор, менять не обязательно') + '.'
+            text += tr(' Пояс: ') + (tr('совпадает ✓') if result['timezone_matches'] else tr('не совпадает')) + tr('. Язык: ') + (
+                tr('совпадает ✓') if result['language_matches'] else tr('не совпадает — это ваш выбор, менять не обязательно')) + '.'
         self.advice_text.configure(text=text)
 
     def settings(self, kind):
@@ -1336,7 +1369,7 @@ class Shell:
         try:
             open_settings(kind)
         except Exception:
-            self.ask('Не открылось', 'Откройте настройки Windows вручную.')
+            self.ask(tr('Не открылось'), tr('Откройте настройки Windows вручную.'))
 
     def mainloop(self):
         self.root.mainloop()
