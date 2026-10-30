@@ -7,6 +7,8 @@ import ipaddress
 import os
 import re
 
+__all__ = ['HIDDEN', 'redact']
+
 SECRET_KEYS = re.compile(r'(?i)(pass(word|wd)?|secret|token|private.?key|uuid|user(name)?|login|cookie|credential|auth)$')
 ADDRESS = re.compile(r'(?<![\w.:])(\d{1,3}(?:\.\d{1,3}){3})(?![\w.])|(?<![\w:])([0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){2,7})(?![\w:])')
 URL_CREDENTIALS = re.compile(r'(?i)\b([a-z][a-z0-9+.-]*://)[^\s/@:"\']+:[^\s/@"\']*@')
@@ -33,7 +35,10 @@ def _text(value, home, user, version=False):
     return ADDRESS.sub(lambda m: '<адрес>' if _public_address(m.group(0)) else m.group(0), value)
 
 
-def redact(value, *, home=None, user=None, version=False):
+def redact(value, *,
+           home=None,   # None: USERPROFILE, read on each call
+           user=None,   # None: USERNAME, read on each call
+           version=False):
     """A copy of value with secrets and identifying details replaced; structure and keys are kept."""
     home = home if home is not None else os.environ.get('USERPROFILE', '')
     user = user if user is not None else os.environ.get('USERNAME', '')

@@ -1,16 +1,17 @@
-from loopback_only import loopback_only
 import json
 from types import SimpleNamespace
 
 import pytest
-
-from claude_reset.network import connections, remote_backend as rb
-from claude_reset.services import proxy as proxy_form
-from claude_reset.safeio import SafetyError
-from proxy_fakes import ACCEPTED, REACHABLE, Probe, working
-from test_remote_backend import FakeSocks, loopback_open, HOST, USER, PASSWORD
-from test_gui_shell import ui, Widget, button
 from dialog_fakes import script
+from loopback_only import loopback_only
+from proxy_fakes import ACCEPTED, REACHABLE, Probe, working
+from test_gui_shell import Widget, button, ui
+from test_remote_backend import HOST, PASSWORD, USER, FakeSocks, loopback_open
+
+from claude_reset.network import connections
+from claude_reset.network import remote_backend as rb
+from claude_reset.safeio import SafetyError
+from claude_reset.services import proxy as proxy_form
 
 
 def draft(probe=None):
@@ -29,7 +30,7 @@ def test_check_real_socks_login_connect_and_refusal(monkeypatch, accepted):
     value = draft(working(HOST, handshake=handshake))
     try:
         result = value.check()
-        assert result['status'] == ('proxy_checked' if accepted else 'proxy_login_or_connect_refused')
+        assert result.status == ('proxy_checked' if accepted else 'proxy_login_or_connect_refused')
         assert bool(value.expected) == accepted
         assert server.requests == (['claude.ai'] if accepted else [])
     finally:
@@ -46,8 +47,8 @@ def test_check_failures_have_no_private_data(mode, capsys):
                         handshake=ACCEPTED, measure_exit=measure))
     result = value.check()
     assert value.expected is None
-    assert result['status'] != 'proxy_checked'
-    public = json.dumps(result) + repr(value) + str(capsys.readouterr())
+    assert result.status != 'proxy_checked'
+    public = json.dumps(result.to_json()) + repr(value) + str(capsys.readouterr())
     assert all(secret not in public for secret in (USER, PASSWORD, HOST))
 
 
@@ -55,15 +56,15 @@ def test_check_failures_have_no_private_data(mode, capsys):
 def test_save_confirmation_and_dpapi_leak_check(monkeypatch, tmp_path, capsys, exit_ip):
     paths = SimpleNamespace(state=tmp_path / 'state', local=tmp_path / 'local')
     value = draft(working(exit_ip))
-    assert value.save(paths, confirmed=True)['status'] == 'proxy_confirmation_required'
-    assert value.check()['status'] == 'proxy_checked'
-    assert value.save(paths)['status'] == 'proxy_confirmation_required'
+    assert value.save(paths, confirmed=True).status == 'proxy_confirmation_required'
+    assert value.check().status == 'proxy_checked'
+    assert value.save(paths).status == 'proxy_confirmation_required'
     assert not paths.state.exists()
     result = value.save(paths, confirmed=True)
-    assert result['status'] == 'proxy_saved'
+    assert result.status == 'proxy_saved'
     assert rb.load(paths) == value.profile
     assert connections.load(paths)['expected_exit_ips'] == [exit_ip]
-    public = json.dumps(result).encode() + str(capsys.readouterr()).encode()
+    public = json.dumps(result.to_json()).encode() + str(capsys.readouterr()).encode()
     for path in tmp_path.rglob('*'):
         if path.is_file():
             public += path.read_bytes()
@@ -80,6 +81,7 @@ def test_ipv6_peer_refused_without_disclosing_address():
 @pytest.mark.parametrize('valid', [True, False])
 def test_vless_window_import_dpapi_and_refusal(ui, monkeypatch, tmp_path, capsys, valid):
     from test_backend_profiles import profile
+
     from claude_reset.backend import profiles as backend_profiles
     value = profile()
     outbound = value['config']['outbounds'][0]
@@ -99,13 +101,13 @@ def test_vless_window_import_dpapi_and_refusal(ui, monkeypatch, tmp_path, capsys
         callback(result)
     ui.run = run
     button('Импортировать VLESS+Reality (JSON)').options['command']()
-    assert outcomes[0]['status'] == ('vless_imported' if valid else 'vless_import_refused')
+    assert outcomes[0].status == ('vless_imported' if valid else 'vless_import_refused')
     if valid:
-        assert backend_profiles.load(ui.paths, outcomes[0]['profile_id']) == value
-        assert not outcomes[0]['selected'] and not outcomes[0]['clients_changed']
+        assert backend_profiles.load(ui.paths, outcomes[0].profile_id) == value
+        assert outcomes[0].selected is False and outcomes[0].clients_changed is False
     else:
         assert not ui.paths.state.exists()
-    public = (json.dumps(outcomes) + ui.status.get() + str(capsys.readouterr())).encode()
+    public = (json.dumps([outcome.to_json() for outcome in outcomes]) + ui.status.get() + str(capsys.readouterr())).encode()
     for file in ui.paths.state.rglob('*'):
         if file.is_file():
             public += file.read_bytes()
@@ -130,10 +132,10 @@ def test_connect_refusal_and_disconnect_never_measure_or_save(monkeypatch, tmp_p
                         original(f'socks5://127.0.0.1:{server.port}', host, port, verify, auth=kw['auth']))
     value = draft(Probe(reachable=REACHABLE, handshake=rb.handshake_test))   # measuring after a refusal fails the test
     try:
-        assert value.check() == {'status': 'proxy_login_or_connect_refused'}
+        assert value.check().to_json() == {'status': 'proxy_login_or_connect_refused'}
         assert value.expected is None
         paths = SimpleNamespace(state=tmp_path / 'state')
-        assert value.save(paths, confirmed=True)['status'] == 'proxy_confirmation_required'
+        assert value.save(paths, confirmed=True).status == 'proxy_confirmation_required'
         assert not paths.state.exists()
     finally:
         server.listener.close()
@@ -141,18 +143,18 @@ def test_connect_refusal_and_disconnect_never_measure_or_save(monkeypatch, tmp_p
 
 def test_window_buttons_and_stale_draft(ui, monkeypatch):
     for key, value in zip(('host', 'port', 'username', 'password'), (HOST, '1080', USER, PASSWORD)):
-        ui.proxy_fields[key].set(value)
-    assert any(w.options.get('textvariable') is ui.proxy_fields['password'] and
+        ui.connection_tab.proxy_fields[key].set(value)
+    assert any(w.options.get('textvariable') is ui.connection_tab.proxy_fields['password'] and
                w.options.get('show') == '*' for w in Widget.all)
     ui.probe = working(HOST)
     ui.run = lambda action, callback: callback(action())
     button('Проверить прокси').options['command']()
-    assert ui.proxy_draft.expected
+    assert ui.connection_tab.proxy_draft.expected
     confirms = []
     script(ui, askyesno=lambda *args: confirms.append(args) or True)
     button('Сохранить прокси и выход').options['command']()
     assert confirms and rb.load(ui.paths)['password'] == PASSWORD
-    ui.proxy_fields['password'].set('changed')
+    ui.connection_tab.proxy_fields['password'].set('changed')
     button('Сохранить прокси и выход').options['command']()
     assert len(confirms) == 1
     assert 'Сначала' in ui.status.get()
@@ -163,6 +165,7 @@ def test_window_buttons_and_stale_draft(ui, monkeypatch):
 def test_http_form_check_save_and_leak(ui, monkeypatch, tmp_path, capsys, accepted, authenticated):
     import base64
     import socket
+
     from test_tunnel_transport import Backend
     server = Backend('http', refuse=not accepted)
     original = socket.create_connection
@@ -177,10 +180,10 @@ def test_http_form_check_save_and_leak(ui, monkeypatch, tmp_path, capsys, accept
         measured.append(profile)
         return {'status': 'measured', 'exit_ip': HOST}
     ui.probe = Probe(reachable=REACHABLE, handshake=rb.handshake_test, measure_exit=measure)
-    ui.proxy_type.set('http')
+    ui.connection_tab.proxy_type.set('http')
     for key, value in zip(('host', 'port', 'username', 'password'),
                           (HOST, '8080', USER if authenticated else '', PASSWORD if authenticated else '')):
-        ui.proxy_fields[key].set(value)
+        ui.connection_tab.proxy_fields[key].set(value)
     ui.run = lambda action, callback: callback(action())
     confirms = []
     script(ui, askyesno=lambda *args: confirms.append(True) or True)
@@ -195,7 +198,7 @@ def test_http_form_check_save_and_leak(ui, monkeypatch, tmp_path, capsys, accept
             assert saved['adapter'] == rb.HTTP_ADAPTER
             assert rb.proxy_url(saved) == f'http://{HOST}:8080'
             assert connections.load(ui.paths)['expected_exit_ips'] == [HOST]
-            ui.proxy_type.set('socks5')
+            ui.connection_tab.proxy_type.set('socks5')
             button('Сохранить прокси и выход').options['command']()
             assert len(confirms) == 1
             assert rb.load(ui.paths) == saved
@@ -222,6 +225,7 @@ def test_http_form_refuses_unsupported_type_or_login(changes):
 @pytest.mark.parametrize('existing', [None, b'previous encrypted profile'])
 def test_saving_the_pair_rolls_back_the_proxy_when_the_exit_fails(tmp_path, monkeypatch, existing):
     from types import SimpleNamespace
+
     from claude_reset.network import connections, remote_backend
     from claude_reset.services import proxy as proxy_form
     paths = SimpleNamespace(state=tmp_path)

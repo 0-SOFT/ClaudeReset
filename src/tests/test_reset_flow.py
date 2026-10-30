@@ -2,13 +2,13 @@
 from types import SimpleNamespace
 
 import pytest
-from claude_reset.model.confirmation import Confirmation
-
-from claude_reset.reset import cleanup
-from claude_reset.ui import reset_flow
-from claude_reset.services import reset as reset_service
-from claude_reset.safeio import SafetyError
 from scripted import Strict
+
+from claude_reset.model.confirmation import Confirmation
+from claude_reset.reset import cleanup
+from claude_reset.safeio import SafetyError
+from claude_reset.services import reset as reset_service
+from claude_reset.ui import reset_flow
 
 
 class FakeActions:
@@ -60,22 +60,23 @@ def test_check_reports_found_data_in_plain_words(world):
                   {'label': 'Claude Code', 'status': 'absent', 'bytes': 0, 'files': 0}]
     world.credentials = ('LegacyGeneric:target=Claude',)
     result = session(world, FakeActions()).check()
-    assert result['rows'] == [{'label': 'Desktop', 'bytes': 3 * 1024 ** 3, 'status': 'present'}]
+    assert result.to_json()['rows'] == [{'label': 'Desktop', 'bytes': 3 * 1024 ** 3, 'status': 'present'}]
     assert reset_flow.shown(result)['rows'] == [{'label': 'Claude Desktop: вход, история, настройки', 'size': '3,0 ГБ', 'status': 'present'}]
-    assert result['credentials'] == 1 and result['ready'] and not result['nothing_found']
+    assert result.credentials == 1 and result.ready and not result.nothing_found
+    assert list(result.to_json()) == ['rows', 'total_bytes', 'credentials', 'blockers', 'ready', 'nothing_found']
 
 
 def test_empty_computer_is_nothing_found(world):
-    assert session(world, FakeActions()).check()['nothing_found'] is True
+    assert session(world, FakeActions()).check().nothing_found is True
 
 
 def test_open_vscode_is_a_task_for_the_person_not_the_program(world):
     world.blockers, world.processes = ['processes'], ['Code.exe']
-    blockers = session(world, FakeActions()).check()['blockers']
-    assert [(b['key'], b['kind']) for b in blockers] == [('vscode', 'user')]
+    blockers = session(world, FakeActions()).check().blockers
+    assert [(b.key, b.kind) for b in blockers] == [('vscode', 'user')]
     world.processes = ['Code.exe', 'Claude.exe']
-    blockers = session(world, FakeActions()).check()['blockers']
-    assert [(b['key'], b['kind']) for b in blockers] == [('vscode', 'user'), ('processes', 'auto')]
+    blockers = session(world, FakeActions()).check().blockers
+    assert [(b.key, b.kind) for b in blockers] == [('vscode', 'user'), ('processes', 'auto')]
 
 
 def test_resolve_runs_safe_actions_in_order_then_checks_again(world):
@@ -92,8 +93,9 @@ def test_resolve_runs_safe_actions_in_order_then_checks_again(world):
     result = run.resolve(step=lambda label, fn, uac=False: labels.append(label) or fn())
     assert actions.calls == ['close_claude', 'stop_cowork', 'export_cowork', 'archive_extras']
     assert labels == ['close_claude', 'stop_cowork', 'export_cowork', 'archive_extras', 'check']
-    assert result['resolved'] == ['processes', 'cowork_service', 'cowork_export', 'extra_entries']
-    assert result['ready'] and run.cowork_export == ('run1', 'run2') and run.plan.cowork_export == ('run1', 'run2')
+    assert result.to_json()['resolved'] == ['processes', 'cowork_service', 'cowork_export', 'extra_entries']
+    assert result.to_json()['failed'] == [] and result.to_json()['errors'] == {}
+    assert result.ready and run.cowork_export == ('run1', 'run2') and run.plan.cowork_export == ('run1', 'run2')
 
 
 def test_service_process_alone_is_stopped_through_the_service(world):
@@ -110,8 +112,8 @@ def test_claude_that_did_not_close_becomes_a_task_for_the_person(world):
     run = session(world, FakeActions())
     run.check()
     result = run.resolve()
-    assert [b['key'] for b in result['blockers']] == ['claude_running']
-    assert result['blockers'][0]['kind'] == 'user'
+    assert [b.key for b in result.blockers] == ['claude_running']
+    assert result.blockers[0].kind == 'user'
 
 
 def test_failed_export_is_reported_and_blocks(world):
@@ -119,7 +121,7 @@ def test_failed_export_is_reported_and_blocks(world):
     run = session(world, FakeActions(export_cowork=None))
     run.check()
     result = run.resolve()
-    assert result['failed'] == ['cowork_export'] and not result['ready']
+    assert result.failed == ('cowork_export',) and not result.ready
 
 
 def test_wipe_needs_the_word_and_a_clean_plan(world):
@@ -143,8 +145,9 @@ def test_wipe_resets_keys_first_rechecks_and_reports(world):
     labels = []
     result = run.wipe(Confirmation.ERASE, browsers=True, step=lambda label, fn, uac=False: labels.append(label) or fn())
     assert labels == ['desktop_keys', 'check', 'wipe', 'browsers']
-    assert result == {'status': 'done', 'memory': 'restored_verbatim', 'desktop_keys': 'reset',
-                      'browsers': 'browsers_open', 'passwords_removed': 2, 'no_files_left': True}
+    assert result.to_json() == {'status': 'done', 'memory': 'restored_verbatim', 'desktop_keys': 'reset',
+                                'browsers': 'browsers_open', 'passwords_removed': 2, 'no_files_left': True,
+                                'errors': {}}
     assert run.plan is None
 
 
@@ -155,7 +158,7 @@ def test_wipe_without_memory_uses_the_final_audit(world):
     run.check()
     assert run.mode == 'wipe' and world.plans[-1].mode == 'wipe'
     result = run.wipe(Confirmation.ERASE)
-    assert result['no_files_left'] is True and result['browsers'] == 'not_requested'
+    assert result.no_files_left is True and result.browsers == 'not_requested'
 
 
 def test_failed_wipe_is_a_plain_result_not_an_exception(world):
@@ -163,7 +166,8 @@ def test_failed_wipe_is_a_plain_result_not_an_exception(world):
     run = session(world, actions)
     run.check()
     result = run.wipe(Confirmation.ERASE)
-    assert result == {'status': 'failed', 'desktop_keys': 'not_supported'} and 'someone' not in repr(result)
+    assert result.to_json() == {'status': 'failed', 'desktop_keys': 'not_supported'}
+    assert 'someone' not in repr(result)
 
 
 def test_archive_extras_falls_back_to_no_copy_when_a_file_looks_like_a_secret(tmp_path):
@@ -175,10 +179,11 @@ def test_archive_extras_falls_back_to_no_copy_when_a_file_looks_like_a_secret(tm
         if entries:
             raise SafetyError('possible credential')
         return {'run': 'a' * 32}
-    actions = reset_service.Actions(paths)
-    actions.customizations = Strict(extra_entries=['agents', 'secrets.env'], create_plan=create,
-                                    apply_plan=lambda p, run, server_step_complete: applied.append((run, server_step_complete)) or {})
-    actions.archive_extras()
+    def apply(paths, run, server_step_complete):
+        applied.append((run, server_step_complete))
+        return {}
+    customizations = Strict(extra_entries=['agents', 'secrets.env'], create_plan=create, apply_plan=apply)
+    reset_service.Actions(paths, customizations=customizations).archive_extras()
     assert plans == [['agents', 'secrets.env'], []] and applied == [('a' * 32, True)]
 
 
@@ -188,29 +193,26 @@ def test_browser_cleanup_reports_open_browsers(tmp_path):
         raise browser_sites.BrowsersOpenError('any wording')
     def other(paths, **_):
         raise SafetyError('Закройте что-то другое')
-    actions = reset_service.Actions(tmp_path)
     for site_data, expected in ((refuse, 'browsers_open'), (other, 'failed'), (lambda paths, **kw: kw, 'cleared')):
-        actions.browser_sites = Strict(site_data=site_data)
+        actions = reset_service.Actions(tmp_path, browser_sites=Strict(site_data=site_data))
         assert actions.clear_browsers() == expected
 
 
 def test_desktop_keys_states(tmp_path):
     from claude_reset.reset.native_worker import FAMILY
     paths = SimpleNamespace(local=tmp_path, state=tmp_path)
-    actions = reset_service.Actions(paths)
-    actions.desktop_keys = Strict()   # no profile: nothing is asked
-    assert actions.reset_desktop_keys() == 'not_present'
+    def keys(desktop_keys):
+        return reset_service.Actions(paths, desktop_keys=desktop_keys).reset_desktop_keys()
+    assert keys(Strict()) == 'not_present'   # no profile: nothing is asked
     (tmp_path / 'Claude-Data' / FAMILY.lower()).mkdir(parents=True)
     def unsupported(*_):
         raise SafetyError('validated MSIX installation')
-    actions.desktop_keys = Strict(create_plan=unsupported)
-    assert actions.reset_desktop_keys() == 'not_supported'
-    actions.desktop_keys = Strict(create_plan={'run': 'r', 'keys': 0})
-    assert actions.reset_desktop_keys() == 'no_keys'
+    assert keys(Strict(create_plan=unsupported)) == 'not_supported'
+    assert keys(Strict(create_plan={'run': 'r', 'keys': 0})) == 'no_keys'
     applied = []
-    actions.desktop_keys = Strict(create_plan={'run': 'r', 'keys': 2},
-                                  apply_plan=lambda p, run, server_step_complete: applied.append(run))
-    assert actions.reset_desktop_keys() == 'reset' and applied == ['r']
+    assert keys(Strict(create_plan={'run': 'r', 'keys': 2},
+                       apply_plan=lambda p, run, server_step_complete: applied.append(run))) == 'reset'
+    assert applied == ['r']
 
 
 def test_sizes_are_human():

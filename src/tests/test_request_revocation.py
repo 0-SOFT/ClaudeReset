@@ -3,11 +3,12 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import pytest
-
-from claude_reset.elevation import request as uac, admission as gate
-from claude_reset.elevation import claims
-from claude_reset.elevation.locks import locked
 from test_uac_request import paths
+
+from claude_reset.elevation import admission as gate
+from claude_reset.elevation import claims
+from claude_reset.elevation import request as uac
+from claude_reset.elevation.locks import locked
 
 
 def consume(paths, request):

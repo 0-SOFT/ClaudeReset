@@ -1,13 +1,14 @@
 import json
 import types
+
 import pytest
 
-from claude_reset.network import l1_install as inst
-from claude_reset.network import controller_status
-from claude_reset.network import l1_common
+from claude_reset import config
 from claude_reset.elevation import claims
-from claude_reset.windows import tasks
 from claude_reset.model.status import NextAction
+from claude_reset.network import controller_status, l1_common
+from claude_reset.network import l1_install as inst
+from claude_reset.windows import tasks
 
 
 @pytest.fixture(autouse=True)
@@ -202,10 +203,10 @@ def test_unknown_task_states_never_prove_idle():
         assert not l1_common.wait_task_idle(3, state=lambda: value, sleep=sleep, clock=clock)
 
 
-def test_failed_task_query_cannot_report_missing(monkeypatch):
-    from claude_reset.backend import install as backend_install
-    monkeypatch.setattr(tasks, 'run', lambda script, runner=None: (1, 'Missing', 'error'))
-    assert l1_common.task_state() is None
+def test_failed_task_query_cannot_report_missing():
+    import subprocess
+    failed = lambda argv, **options: subprocess.CompletedProcess(argv, 1, 'Missing', 'error')
+    assert tasks.state(config.CONTROLLER_TASK, failed) is None
 
 
 def test_restart_closed_port_busy_controller_retains_claim(tmp_path):

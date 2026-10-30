@@ -12,19 +12,16 @@ import ast
 import importlib
 import json
 import os
-from pathlib import Path
 import types
+from pathlib import Path
 
 import pytest
-
-from claude_reset.backend import profiles as backend_profiles, gateway_profile
-from claude_reset.network import connections, gateway_reservation, l1_consent, l1_install
-from claude_reset.network import remote_backend, strict_wfp
-from claude_reset.windows import wfp
-from claude_reset.backend.attestation import inspect_sing_box
 from test_backend_attestation import config as sing_box_config
-from test_gateway_profile import profile as gateway_sample
 from test_l1_install import Fake, state
+
+from claude_reset.backend import profiles as backend_profiles
+from claude_reset.backend.attestation import inspect_sing_box
+from claude_reset.network import connections, l1_consent, l1_install, remote_backend, strict_wfp
 
 ROOT = Path(__file__).resolve().parents[2]
 GOLDEN = Path(__file__).with_name('golden') / 'live_contracts.json'
@@ -43,8 +40,8 @@ def golden(section, value):
 
 
 def test_backend_worker_imports_dpapi_from_the_source_tree():
-    # packaging/backend/proxy_worker.py and every worker installed from it.
-    from claude_reset.windows.system import DPAPI
+    # packaging/backend/proxy_worker.py and every worker installed from it import it from the package.
+    from claude_reset.windows import DPAPI
     assert callable(DPAPI().encrypt) and callable(DPAPI().decrypt)
 
 
@@ -68,8 +65,8 @@ def test_names_imported_by_tools_and_entry_scripts_exist(module, name):
 
 
 def command_line_parser(monkeypatch):
-    from claude_reset.ui import expert_window as app
     from claude_reset import cli
+    from claude_reset.ui import expert_window as app
 
     class Captured(Exception):
         pass
@@ -106,12 +103,6 @@ def test_wfp_filter_keys_are_unchanged():
         'deny': [rule.key.value() for rule in strict_wfp.deny_rules(identities)],
         'relay': [rule.key.value() for rule in strict_wfp.relay_permits(identities, 25082)],
         'pinned_endpoint': strict_wfp.Rule(engine, 'connect_v4', strict_wfp.PERMIT, '198.51.100.7', 443).key.value(),
-        'service_endpoints': [strict_wfp.ServiceRule(engine, layer, strict_wfp.PERMIT, '127.0.0.1', 25080, True, service).key.value()
-                              for service in ('ClaudeResetBackend', 'ClaudeResetGateway') for layer in ('connect_v4', 'recv_v4')],
-        'gateway_sublayer': gateway_reservation.SUB.value(),
-        'gateway_namespace': str(gateway_reservation.NS),
-        'owned_filters': [[f.group, f.target, f.family, f.key, f.sublayer, f.mark.decode(), f.kind, f.package_family]
-                          for f in wfp.OWNED_FILTERS],
     })
 
 
@@ -130,7 +121,6 @@ def test_stored_document_formats_are_unchanged():
         'sing_box_inspection': inspect_sing_box(sing_box_config()),
         'remote_backend': decoded_socks,
         'remote_backend_kind': remote_backend.backend_kind(decoded_socks),
-        'gateway_profile_bytes': gateway_profile.encode(gateway_profile.validate(gateway_sample())).decode('utf-8'),
         'consent_required': l1_consent.required(coverage),
         'consent_file': l1_consent.FILE,
     })
@@ -141,8 +131,8 @@ def test_protection_install_report_shape_is_unchanged(tmp_path, scenario):
     paths = types.SimpleNamespace(home=tmp_path, state=tmp_path / 'state', local=tmp_path / 'local')
     fake = Fake(package=scenario == 'package_failed')
     report = l1_install.run(paths, deps=fake, build_dir=Path('b'), confirmed=scenario != 'needs_consent')
-    from claude_reset.ui import expert_window as app
     from claude_reset import cli
+    from claude_reset.ui import expert_window as app
     golden(f'l1_install_report_{scenario}', {'report': cli.explain_next(report), 'calls': fake.calls})
 
 

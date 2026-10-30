@@ -1,7 +1,7 @@
 """Russian texts: errors and notes of the logic by code, and the window's operation messages."""
 from types import MappingProxyType
 
-from ... import config
+__all__ = ['ERRORS', 'GUI_MESSAGES', 'NOTES', 'PROBE_PAGE']
 
 # Errors people read, by SafetyError.code.
 ERRORS = MappingProxyType({
@@ -24,20 +24,12 @@ ERRORS = MappingProxyType({
     'cowork_location': 'Неподдержанное расположение Cowork',
     'credentials_remain': 'Сохранённые пароли Claude остались после удаления',
     'database_journal_pending': 'У базы есть незавершённый журнал SQLite. Закройте клиент и завершите его штатное восстановление перед анализом',
-    'editor_extension_changed': 'Проверенное расширение выделенного редактора изменилось',
-    'editor_extension_unexpected': 'В выделенном редакторе появилось постороннее расширение',
-    'editor_manifest': 'Описание выделенного профиля редактора не совпадает с проверенным',
-    'editor_profile_count': 'Нужен ровно один выделенный профиль редактора для Claude',
-    'editor_settings_changed': 'Сетевые настройки выделенного редактора изменились',
     'files_remain': 'После стирания обнаружены файловые остатки',
     'guard_metadata_large': 'Файл метаданных защиты слишком велик',
-    'guard_not_installed': f'Локальная сетевая защита Claude не установлена (нет задачи {config.BACKEND_TASK})',
     'guard_task_actions': 'Задача локального прокси отличается от установленной: проверка остановлена',
     'interrupted_uncertain': 'Результат прерванного действия неизвестен. Экспортируйте память и подготовьте новый план',
     'istanbul_offset': 'Стамбул не сохраняет текущее смещение UTC. Ничего не изменено',
-    'launch_target_unknown': 'Неизвестная цель защищённого запуска',
     'memory_mismatch': 'Память не совпала с архивом',
-    'needs_64_bit': 'Операция требует 64-разрядной Windows',
     'not_claude_entry': 'Запись не относится к Claude',
     'operation_running': 'Уже выполняется другой сброс или восстановление',
     'package_identity_underived': 'Не удалось вычислить идентичность пакета',
@@ -51,8 +43,6 @@ ERRORS = MappingProxyType({
     'site_data_unavailable': 'Данные сайтов недоступны или схема не поддержана. Возможен частичный результат; повторите предпросмотр.',
     'time_zone_refused': 'Windows не разрешила смену пояса. Системное время не корректировалось',
     'unprotected_chrome_disabled': 'Прежний запуск Chrome без сетевой защиты отключён. Защищённый запуск пока недоступен: приёмка изоляции DNS/IPC не завершена.',
-    'vscode_not_found': 'VS Code не найден в поддерживаемом месте установки',
-    'wfp_layout': 'Неожиданная структура WFP: чтение фильтров остановлено',
     'windows_inspection_failed': 'Инвентаризация Windows не запустилась или превысила время ожидания',
     'windows_settings_failed': 'Не удалось открыть настройки Windows',
     'wipe_mode': 'Выберите режим стирания',
@@ -157,12 +147,6 @@ NOTES = MappingProxyType({
     'guard.boundary.filters': 'WFP-фильтры читаются только с правами администратора: отдельная проверка',
     'guard.boundary.shared_apps': 'Claude в обычных VS Code и Chrome вне защищённой области по решению владельца',
     'guard.boundary.static': 'Статические проверки не измеряют маршрут роутера и не доказывают отсутствие делегированных запросов системных служб',
-    'guard.effect.cli': 'Фильтр WFP по пути продолжает блокировать новый файл на том же месте; перенесённый файл не покрыт',
-    'guard.effect.desktop': 'Фильтры по SID пакета продолжают действовать; код сети и разрешений новой сборки нужно проверить',
-    'guard.effect.editor': 'Защищённый запуск редактора отказывает; нужен новый проверенный профиль',
-    'guard.effect.launch': 'Защищённый запуск отказывает до проверки нового бинарника',
-    'guard.effect.ordinary_editor': 'Фильтр WFP по пути не покрывает CLI обычного редактора; обычный редактор вне защищённой области',
-    'guard.finding.component_changed': 'Изменился компонент: {component}',
     'guard.finding.config': 'Движок или конфигурация прокси отличаются от проверенных',
     'guard.finding.listener': 'Порт прокси не принадлежит движку или открыт не только на loopback',
     'guard.finding.not_installed': 'Задача {task} не найдена: локальная защита не установлена',
@@ -171,8 +155,6 @@ NOTES = MappingProxyType({
     'guard.finding.task_disabled': 'Задача автозапуска прокси отключена',
     'guard.finding.task_rights': 'Задача прокси запускается не с обычными правами',
     'guard.finding.worker': 'Локальный прокси не работает или процесс не совпадает с установленным',
-    'guard.limit.earlier': 'UDP, DNS и WebRTC проверены отдельно ранее; эта проба их не повторяет',
-    'guard.limit.probe': 'Проба проверяет TCP IPv4/IPv6 и HTTPS через прокси из свежего процесса каждого пакета',
     'history.failed_or_partial': 'Ошибка или частичное выполнение',
     'history.fixed_locations_wiped': 'Записано завершение стирания фиксированных расположений',
     'history.note': 'Сохранённые отчёты сброса и стирания, не полный журнал всех действий. Порядок не хронологический. Имена, пути и ошибки скрыты. Запись не подтверждает текущее состояние и не разрешает повтор операции.',

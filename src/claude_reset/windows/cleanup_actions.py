@@ -1,10 +1,12 @@
 """Bounded cleanup actions; no elevation or client/network startup."""
 from __future__ import annotations
+
 import re
-from .system import ps_json
-from ..errors import SafetyError
 from collections.abc import Callable, Iterable
 from typing import Any
+
+from ..errors import SafetyError
+from .powershell import ps_json
 
 __all__ = ['credential_names', 'delete_credential', 'resolve_processes', 'resolve_service']
 

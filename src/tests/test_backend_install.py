@@ -9,9 +9,8 @@ import zipfile
 import pytest
 
 from claude_reset.backend import install as bi
-from claude_reset.elevation import claims
-from claude_reset.network import legacy_guard as netguard
 from claude_reset.backend import location as backend_location
+from claude_reset.elevation import claims
 from claude_reset.safeio import SafetyError
 
 KEY = base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip('=')

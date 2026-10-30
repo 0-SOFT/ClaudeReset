@@ -3,10 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset.network import l1_check, remote_backend
+from claude_reset import config
+from claude_reset.model.status import Proxy
+from claude_reset.network import remote_backend
+from claude_reset.services import protection
+from claude_reset.services.proxy import ProxyResult
 from claude_reset.ui import proxy_flow
 from claude_reset.ui.text import ENGLISH, RUSSIAN
-from claude_reset import config
 
 PARTS = ('isolation_package', 'backend_task', 'backend_listening', 'controller_files', 'controller_task',
          'connection_profile', 'consent', 'relay_listening')
@@ -21,8 +24,11 @@ def facts(task='Ready', **parts):
 
 
 def summarize(data, stop_reason=None, profile=None):
-    return proxy_flow.summary(None, collect=lambda _: data, evaluate=lambda f: f['report'],
-                              status=lambda _: {'last_report': {'stop_reason': stop_reason}}, remote=lambda _: profile)
+    def state(paths):
+        return protection.state(paths, collect=lambda _: data, evaluate=lambda f: f['report'],
+                                status=lambda _: {'last_report': {'stop_reason': stop_reason}},
+                                remote=lambda _: profile)
+    return proxy_flow.summary(None, state=state)
 
 
 ALL = {k: 'ok' for k in PARTS}
@@ -59,7 +65,7 @@ def test_half_installed_and_absent_protection():
 def test_unreadable_state_is_unknown():
     def broken(_):
         raise OSError('C:/Users/someone')
-    result = proxy_flow.summary(None, collect=broken)
+    result = proxy_flow.summary(None, state=lambda paths: protection.state(paths, collect=broken))
     assert result['state'] == 'unknown' and 'someone' not in repr(result)
 
 
@@ -83,7 +89,7 @@ class Draft:
 
     def save(self, paths, *, confirmed=False):
         self.saves.append(confirmed)
-        return {'status': self.saved}
+        return ProxyResult(self.saved)
 
 
 def test_connect_saves_then_installs_or_changes_the_running_protection():
@@ -105,11 +111,11 @@ def test_connect_refuses_unchecked_or_unsaved_drafts():
 
 def test_recheck_tells_whether_the_exit_is_unchanged():
     draft = Draft()
-    same = proxy_flow.recheck('p', check_saved=lambda p: (draft, {'status': 'proxy_checked'}),
+    same = proxy_flow.recheck('p', check_saved=lambda p: (draft, ProxyResult(Proxy.PROXY_CHECKED)),
                               load=lambda p: {'expected_exit_ips': ['9.9.9.9']})
     assert same[0] is draft and same[1]['same_exit'] is True
-    moved = proxy_flow.recheck('p', check_saved=lambda p: (draft, {'status': 'proxy_checked'}),
+    moved = proxy_flow.recheck('p', check_saved=lambda p: (draft, ProxyResult(Proxy.PROXY_CHECKED)),
                                load=lambda p: {'expected_exit_ips': ['8.8.8.8']})
     assert moved[1]['same_exit'] is False
-    failed = proxy_flow.recheck('p', check_saved=lambda p: (None, {'status': 'proxy_unreachable'}))
+    failed = proxy_flow.recheck('p', check_saved=lambda p: (None, ProxyResult(Proxy.PROXY_UNREACHABLE)))
     assert failed[0] is None and failed[1]['text'] == proxy_flow.MESSAGES['proxy_unreachable']

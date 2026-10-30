@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from claude_reset.ui import settings as ui_settings
+from claude_reset.windows import display
 
 
 def test_theme_round_trip_and_defaults(tmp_path):
@@ -27,8 +28,8 @@ def test_resolve_follows_windows_only_for_system():
 
 
 def test_system_dark_reads_apps_theme():
-    assert ui_settings.system_dark(read=lambda: 0) is True
-    assert ui_settings.system_dark(read=lambda: 1) is False
+    assert ui_settings.system_dark(read=lambda: True) is True
+    assert ui_settings.system_dark(read=lambda: False) is False
 
     def missing():
         raise OSError('no value')
@@ -37,13 +38,18 @@ def test_system_dark_reads_apps_theme():
 
 def test_title_bar_uses_the_top_level_window_and_repaints_its_frame():
     calls = []
-    window = SimpleNamespace(winfo_id=lambda: 11)
     api = lambda handle, attribute, value, size: calls.append(('set', handle, attribute)) or 0
     redraw = lambda handle, *args: calls.append(('frame', handle, args[-1]))
-    assert ui_settings.dark_title_bar(window, True, api=api, parent=lambda child: 99, redraw=redraw) is True
+    assert display.set_dark_title_bar(11, True, api=api, parent=lambda child: 99, redraw=redraw) is True
     assert calls == [('set', 99, 20), ('frame', 99, 0x27)]
     failing = lambda *args: 1
-    assert ui_settings.dark_title_bar(window, True, api=failing, parent=lambda child: 99, redraw=redraw) is False
+    assert display.set_dark_title_bar(11, True, api=failing, parent=lambda child: 99, redraw=redraw) is False
+
+
+def test_title_bar_is_best_effort():
+    def gone():
+        raise RuntimeError('window destroyed')
+    assert ui_settings.dark_title_bar(SimpleNamespace(winfo_id=gone), True) is False
 
 
 def test_language_is_russian_by_default_and_remembered(tmp_path):

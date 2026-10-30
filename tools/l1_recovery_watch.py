@@ -7,19 +7,20 @@ close request or missing L1 consent disarms recovery until a manual start.
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
+from claude_reset import config, layout
 from claude_reset.layout import Paths
-from claude_reset.network.l1_recovery import decide, backoff
-from claude_reset.safeio import atomic_json, guarded, SafetyError
-from claude_reset.windows.system import ps_json
+from claude_reset.network.l1_recovery import backoff, decide
+from claude_reset.safeio import SafetyError, atomic_json, guarded
+from claude_reset.windows.powershell import ps_json, quote
 
-TASK = 'ClaudeReset L1 Controller'
+TASK = config.CONTROLLER_TASK
 
 
 def read(path, default=None):
@@ -39,17 +40,22 @@ def read(path, default=None):
     return result
 
 
-def metadata():
-    return ps_json(r'''$ErrorActionPreference='Stop';
-      $t=Get-ScheduledTask -TaskName 'ClaudeReset L1 Controller';
+# The controller task and whether its relay listens; @TASK@, @LOOPBACK@ and @PORT@ come from config.
+METADATA_SCRIPT = r'''$ErrorActionPreference='Stop';
+      $t=Get-ScheduledTask -TaskName @TASK@;
       @{task_state=$t.State.ToString(); executable=[string]$t.Actions.Execute;
         arguments=[string]$t.Actions.Arguments;
-        relay_listening=@(Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort 25082 -ErrorAction SilentlyContinue).Count -gt 0
-      } | ConvertTo-Json -Compress''')
+        relay_listening=@(Get-NetTCPConnection -State Listen -LocalAddress @LOOPBACK@ -LocalPort @PORT@ -ErrorAction SilentlyContinue).Count -gt 0
+      } | ConvertTo-Json -Compress'''
+
+
+def metadata():
+    script = METADATA_SCRIPT.replace('@TASK@', quote(TASK)).replace('@LOOPBACK@', quote(config.LOOPBACK))
+    return ps_json(script.replace('@PORT@', str(config.RELAY_PORT)))
 
 
 def verify_task(meta, folder):
-    expected = Path(os.environ['ProgramFiles']) / 'ClaudeReset-L1/ClaudeReset.exe'
+    expected = layout.l1_program() / config.CONTROLLER_EXE
     arguments = '--strict-guard-serve --report "' + str(folder / 'autostart-report.json') + '"'
     if (meta.get('executable') != str(expected) or meta.get('arguments') != arguments
             or meta.get('task_state') not in ('Ready', 'Running', 'Queued')):
@@ -70,7 +76,10 @@ def run_once():
     # Task Scheduler uses IgnoreNew. This extra lock also covers manual runs.
     import msvcrt
     with (folder / 'recovery.lock').open('a+b') as lock:
-        lock.seek(0); lock.write(b'0'); lock.flush(); lock.seek(0)
+        lock.seek(0)
+        lock.write(b'0')
+        lock.flush()
+        lock.seek(0)
         try:
             msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
         except OSError:
@@ -100,7 +109,7 @@ def run_once():
             if type(next_attempt) not in (int, float) or not 0 <= next_attempt <= now + 300:
                 next_attempt = 0
             if plan['reason'] == 'relay_available' or not plan['armed']:
-                attempts = 0; next_attempt = 0
+                attempts = next_attempt = 0
             result = dict(schema=1, utc=now, **plan, instance=state.get('instance'),
                           controller_sha256=digest, started=False, wfp_changed=False,
                           elevation_requested=False)
@@ -119,7 +128,8 @@ def run_once():
                     executable = Path(os.environ['SystemRoot']) / 'System32/schtasks.exe'
                     run = subprocess.run([str(executable), '/Run', '/TN', TASK],
                                          capture_output=True, timeout=15, creationflags=0x08000000)
-                    attempts += 1; next_attempt = now + backoff(attempts)
+                    attempts += 1
+                    next_attempt = now + backoff(attempts)
                     result.update(started=run.returncode == 0, task_run_exit=run.returncode)
                     if run.returncode == 0:
                         # A Stop command can have read the old status just
@@ -135,7 +145,8 @@ def run_once():
             atomic_json(folder / 'recovery-report.json', result, folder)
             return result
         finally:
-            lock.seek(0); msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 def follow_start(folder, previous_instance, previous_close):

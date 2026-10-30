@@ -1,21 +1,26 @@
 from types import SimpleNamespace
-from loopback_only import loopback_only
+
 import pytest
-from claude_reset.ui import protection_panel as panel, expert_window as app
-from claude_reset.services import proxy as proxy_service
-from test_gui_shell import ui, button
-from claude_reset import config
-from claude_reset.network import controller, gate_rules
-from claude_reset.model.status import Protection
 from dialog_fakes import script
+from loopback_only import loopback_only
 from proxy_fakes import REACHABLE, Probe, working
 from scripted import Scripted, Strict
+from test_gui_shell import button, ui
+
+from claude_reset import config
+from claude_reset.model.status import Protection
+from claude_reset.network import controller, gate_rules
+from claude_reset.services import proxy as proxy_service
+from claude_reset.services.protection import ActionResult
+from claude_reset.ui import expert_window as app
+from claude_reset.ui import protection_panel as panel
 
 
 @pytest.mark.parametrize('proxy_type', ['http', 'socks5'])
 @pytest.mark.parametrize('reachable', [True, False])
 def test_saved_type_retry_and_controller_labels(tmp_path, proxy_type, reachable):
-    from claude_reset.network import remote_backend as rb, connections
+    from claude_reset.network import connections
+    from claude_reset.network import remote_backend as rb
     from claude_reset.services.proxy import ProxyDraft
     paths = SimpleNamespace(state=tmp_path, home=tmp_path, local=tmp_path / 'local')
     profile = ProxyDraft('8.8.8.8', 8080, 'private-user', 'private-password', proxy_type=proxy_type).profile
@@ -25,7 +30,7 @@ def test_saved_type_retry_and_controller_labels(tmp_path, proxy_type, reachable)
                     handshake=lambda p: calls.append(rb.proxy_url(p).split(':')[0]) or {'ok': True})
     draft, outcome = proxy_service.check_saved(paths, probe=probe)
     assert draft.proxy_type == proxy_type
-    assert outcome['status'] == ('proxy_checked' if reachable else 'proxy_unreachable')
+    assert outcome.status == ('proxy_checked' if reachable else 'proxy_unreachable')
     assert calls == ([proxy_type] if reachable else [])
     assert bool(draft.expected) == reachable
     assert rb.load(paths) == profile
@@ -42,7 +47,7 @@ def test_saved_type_retry_and_controller_labels(tmp_path, proxy_type, reachable)
     text = panel.status(paths, l1=Scripted(check={}, report={'last_report': state}))['text']
     assert ('HTTP CONNECT' if proxy_type == 'http' else 'SOCKS5') in text
     assert all(secret not in text + str(outcome) for secret in ('private-user', 'private-password', '8.8.8.8', '9.9.9.9'))
-    assert draft.check()['status'] == 'proxy_unreachable' and draft.expected is None
+    assert draft.check().status == 'proxy_unreachable' and draft.expected is None
 
 
 @pytest.mark.parametrize('initial,changed', [('socks5', 'http'), ('http', 'socks5')])
@@ -51,13 +56,13 @@ def test_change_type_requires_recheck_before_apply(ui, initial, changed):
     calls = []
     ui.run = lambda fn, cb, **kw: cb(fn())
     for key, value in dict(host='8.8.8.8', port='8080', username='', password='').items():
-        ui.proxy_fields[key].set(value)
+        ui.connection_tab.proxy_fields[key].set(value)
     ui.probe = working('9.9.9.9')
     script(ui, askyesno=True)
     ui.l1 = Strict(restart=lambda p, **kw: calls.append(kw['proxy_draft'].proxy_type) or {'status': 'restarted'})
-    ui.proxy_type.set(initial)
+    ui.connection_tab.proxy_type.set(initial)
     button('Проверить прокси').options['command']()
-    ui.proxy_type.set(changed)
+    ui.connection_tab.proxy_type.set(changed)
     button('Применить проверенный прокси').options['command']()
     assert not calls
     button('Проверить прокси').options['command']()
@@ -97,8 +102,8 @@ def test_limits_read_only_and_unknown_refused(tmp_path):
 @pytest.mark.parametrize('status', ['installed_needs_attention', 'removed_with_leftovers', 'relay_not_open', 'reconcile_required', 'failed'])
 def test_partial_and_secret_results(status):
     secret = 'secret-user-password 198.51.100.99 2001:db8::8'
-    output = panel.result({'status': status, 'error': secret, 'reason': secret,
-                           'steps': [{'detail': secret}], 'retry_blocked': True})['text']
+    output = panel.result(ActionResult.of({'status': status, 'error': secret, 'reason': secret,
+                                           'steps': [{'detail': secret}], 'retry_blocked': True}))['text']
     assert secret not in output and 'Повтор запрещён' in output
     assert output.startswith(panel.RESULTS.get(status, 'Операция не завершена'))
 
@@ -129,7 +134,7 @@ def test_window_buttons_confirmation(ui, action, label, accept):
     if accept:
         options = {'confirmed': True, 'protect_extension': None, 'reinstall_controller': False}
         assert calls[0] == (action, options if action == 'install' else {})
-        assert ui.protection_text.get() == panel.RESULTS[status]
+        assert ui.protection_tab.protection_text.get() == panel.RESULTS[status]
     if action == 'install':
         assert all(line in prompts[0] for line in panel.LIMITS.values())
 
@@ -139,10 +144,10 @@ def test_window_status_and_extension_choice(ui):
     ui.l1 = Strict(check={}, report={})
     button('Обновить состояние L1').options['command']()
 
-    assert ui.protection_text.get() == panel.status(ui.paths, l1=ui.l1)['text']
-    ui.protect_extension.set(True)
-    ui.protection_extension_changed()
-    assert ui.protection_extension_choice is True
+    assert ui.protection_tab.protection_text.get() == panel.status(ui.paths, l1=ui.l1)['text']
+    ui.protection_tab.protect_extension.set(True)
+    ui.protection_tab.protection_extension_changed()
+    assert ui.protection_tab.protection_extension_choice is True
     ui.worker = SimpleNamespace(busy=True)
     ui.l1 = Strict()   # a busy window asks nothing
     button('Обновить состояние L1').options['command']()
@@ -175,10 +180,10 @@ def test_saved_proxy_blockers(tmp_path, outcome):
              'proxy_unreachable': Probe(reachable={'status': 'unreachable'}),
              'proxy_login_or_connect_refused': Probe(reachable=REACHABLE, handshake={'ok': False})}[outcome]
     draft, public = proxy_service.check_saved(paths, probe=probe)
-    assert draft.profile['password'] == 'secret-pass' and public['status'] == outcome
+    assert draft.profile['password'] == 'secret-pass' and public.status == outcome
     assert 'secret' not in str(public) and '8.8.8.8' not in str(public)
     nothing_saved = SimpleNamespace(state=tmp_path / 'empty', local=tmp_path / 'local')
-    assert proxy_service.check_saved(nothing_saved, probe=Probe())[1]['status'] == 'proxy_confirmation_required'
+    assert proxy_service.check_saved(nothing_saved, probe=Probe())[1].status == 'proxy_confirmation_required'
 
 
 @pytest.mark.parametrize('accept', [True, False])
@@ -186,18 +191,18 @@ def test_window_change_checked_proxy(ui, accept):
     from claude_reset.services.proxy import ProxyDraft
     draft = ProxyDraft('8.8.8.8', 1080, 'secret-user', 'secret-pass')
     draft.expected = {'expected_exit_ips': ['9.9.9.9']}
-    ui.proxy_draft = draft
-    for k, var in ui.proxy_fields.items():
+    ui.connection_tab.proxy_draft = draft
+    for k, var in ui.connection_tab.proxy_fields.items():
         var.set(str(draft.profile[k]))
     ui.run = lambda fn, cb, **kw: cb(fn())
     script(ui, askyesno=accept)
     ui.l1 = Strict(restart={'status': 'restarted'})
     button('Применить проверенный прокси').options['command']()
     assert ui.l1.calls == ([('restart', (ui.paths,), {'proxy_draft': draft})] if accept else [])
-    ui.proxy_fields['password'].set('edited')
+    ui.connection_tab.proxy_fields['password'].set('edited')
     button('Применить проверенный прокси').options['command']()
     assert len(ui.l1.calls) == int(accept)
-    assert 'secret' not in ui.protection_text.get() and '9.9.9.9' not in ui.protection_text.get()
+    assert 'secret' not in ui.protection_tab.protection_text.get() and '9.9.9.9' not in ui.protection_tab.protection_text.get()
 
 
 def test_window_retry_then_confirm(ui):
@@ -212,8 +217,8 @@ def test_window_retry_then_confirm(ui):
     assert [kw['proxy_draft'].expected['expected_exit_ips'] for _, _, kw in ui.l1.calls] == [['9.9.9.9']]
     button('Ввести реквизиты / выбрать другой прокси').options['command']()
     assert ui.tabs.selected == next(page for page, label in ui.tabs.pages if label == 'Соединение')
-    ui.protect_extension.set(True)
-    ui.protection_extension_changed()
+    ui.protection_tab.protect_extension.set(True)
+    ui.protection_tab.protection_extension_changed()
     button('Применить выбор расширения').options['command']()
     assert ui.l1.calls[-1] == ('restart', (ui.paths,), {'protect_extension': True})
 
@@ -235,11 +240,11 @@ def test_vless_retry_exit_confirmation(tmp_path, mode):
     draft.save(paths)
     assert connections.load(paths) == saved
     if mode == 'mismatch':
-        assert result['status'] == 'proxy_checked'
+        assert result.status == 'proxy_checked'
         draft.save(paths, confirmed=True)
         assert connections.load(paths)['expected_exit_ips'] == ['1.1.1.1']
         probe.answers['backend_status'] = {'passed': False}
-        assert draft.check()['status'] == 'proxy_unreachable' and draft.expected is None
+        assert draft.check().status == 'proxy_unreachable' and draft.expected is None
     else:
         assert draft.expected is None
         draft.save(paths, confirmed=True)
@@ -251,8 +256,8 @@ def test_vless_retry_exit_confirmation(tmp_path, mode):
 def test_window_exclude_extension(ui, accept):
     prompts, waits = [], []
     ui.run = lambda fn, cb, **kw: waits.append(kw) or cb(fn())
-    ui.protect_extension.set(False)
-    ui.protection_extension_changed()
+    ui.protection_tab.protect_extension.set(False)
+    ui.protection_tab.protection_extension_changed()
     script(ui, askyesno=lambda title, text: prompts.append(text) or accept)
     ui.l1 = Strict(restart={'status': 'restarted'})
     button('Применить выбор расширения').options['command']()
@@ -269,9 +274,9 @@ def test_every_final_status_of_a_protection_operation_has_its_own_text():
 
 
 def test_every_next_step_has_command_line_words():
-    from claude_reset.ui import expert_window as app
     from claude_reset import cli
     from claude_reset.model.status import NextAction
+    from claude_reset.ui import expert_window as app
     assert set(cli.NEXT_STEPS) == set(NextAction)
     report = {'steps': [{'next': NextAction.CONFIRM_LIMITS}], 'next': 'free text stays'}
     assert cli.explain_next(report) == {'steps': [{'next': 'Прочитайте список и повторите с --confirm-l1-limits'}],
@@ -279,8 +284,9 @@ def test_every_next_step_has_command_line_words():
 
 
 def test_every_proxy_step_has_its_own_text():
-    from claude_reset.ui import expert_window as app, proxy_flow
     from claude_reset.model.status import Proxy
+    from claude_reset.ui import proxy_flow
+    from claude_reset.ui.expert import connection
     # A failed check keeps the generic text on purpose; the main window never imports engine profiles.
-    assert set(Proxy) - set(app.PROXY_MESSAGES) == {Proxy.PROXY_CHECK_FAILED}
+    assert set(Proxy) - set(connection.PROXY_MESSAGES) == {Proxy.PROXY_CHECK_FAILED}
     assert set(Proxy) - set(proxy_flow.MESSAGES) == {Proxy.VLESS_IMPORTED, Proxy.VLESS_IMPORT_REFUSED}

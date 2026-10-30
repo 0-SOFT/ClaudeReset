@@ -3,8 +3,9 @@
 Both formats are on disk already (run folders, request receipts, reports), so they never change.
 """
 from __future__ import annotations
-from datetime import datetime, timezone
+
 import uuid
+from datetime import datetime, timezone
 
 __all__ = ['new_id', 'utc_now']
 

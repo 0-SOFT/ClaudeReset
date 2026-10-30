@@ -8,18 +8,21 @@ An unresolved elevation blocks another run; only confirmed steps permit continua
 """
 import time
 
+from .. import layout
 from ..backend import install as backend_install
-from . import autostart, controller, remote_backend, connections, l1_check, l1_consent, package_isolation
 from ..elevation.claims import serialized
 from ..errors import error_info
-from ..model.status import Backend, Check, Network, Protection, ProtectionLevel
-from ..model.status import NextAction
-from .l1_common import wait_relay_gone, wait_task_idle
-from .. import layout
 from ..model.report import OperationReport
+from ..model.status import Backend, Check, Network, NextAction, Protection, ProtectionLevel
+from . import autostart, connections, controller, l1_check, l1_consent, package_isolation, remote_backend
+from .l1_common import wait_relay_gone, wait_task_idle
+
+__all__ = ['run']
 
 
 class Deps:
+    """The steps of an L1 removal: the port that tests replace with scripted steps."""
+
     @staticmethod
     def pending(paths):
         from ..elevation.claims import blocked
@@ -63,50 +66,49 @@ class Deps:
 
 
 @serialized('l1_remove', completed={Protection.REMOVED})
-def run(paths, *, deps=None, clock=time.time):
-    d = deps or Deps()
+def run(paths, *, deps=Deps(), clock=time.time):
     report = OperationReport('l1_remove')
     folder = layout.controller(paths)
     try:
-        if d.pending(paths):
+        if deps.pending(paths):
             return report.stop(Protection.PENDING_ELEVATION, 'pending')
-        before = d.check(paths)
+        before = deps.check(paths)
         checks = {c['id']: c['status'] for c in before.get('checks', [])}
         report.ok('check', protection=before.get('protection'))
         if any(checks.get(key) == Check.OK for key in ('relay_listening', 'controller_task', 'controller_files')):
-            receipt = d.request_close(paths)
+            receipt = deps.request_close(paths)
             if receipt.get('status') != Network.STRICT_CLOSE_REQUESTED or receipt.get('retry_blocked'):
                 return report.stop(Protection.CONTROLLER_NOT_STOPPED, 'close')
-            if not d.wait_relay_gone():
+            if not deps.wait_relay_gone():
                 return report.stop(Protection.CONTROLLER_NOT_STOPPED, 'close', next=NextAction.CHECK_CONTROLLER_STATUS, filters_removed=False)
-        if not d.wait_controller_idle():
+        if not deps.wait_controller_idle():
             return report.stop(Protection.CONTROLLER_NOT_STOPPED, 'close')
         report.ok('controller_stopped')
         if checks.get('controller_task') == Check.OK or checks.get('controller_files') == Check.OK:
-            receipt = d.autostart_off(paths)
+            receipt = deps.autostart_off(paths)
             if receipt.get('passed') is not True:
                 return report.stop(Protection.AUTOSTART_NOT_REMOVED, 'autostart', detail=receipt.get('status'))
         report.ok('autostart_off')
-        receipt = d.remove_filters(paths)
+        receipt = deps.remove_filters(paths)
         if receipt.get('passed') is not True:
             return report.stop(Protection.FILTERS_NOT_REMOVED, 'filters', detail=receipt.get('status'))
         report.ok('filters_removed')
-        backend = d.remove_backend(paths)
+        backend = deps.remove_backend(paths)
         if backend.get('status') not in (Backend.REMOVED,):
             return report.stop(Protection.BACKEND_NOT_REMOVED, 'backend', detail=backend.get('status'), error=backend.get('error'))
         report.ok('backend_removed')
         if checks.get('isolation_package') == Check.OK:
-            package = d.remove_package(paths)
+            package = deps.remove_package(paths)
             if package.get('passed') is not True:
                 return report.stop(Protection.PACKAGE_NOT_REMOVED, 'package', detail=package.get('status'), error=package.get('error'))
         report.ok('package_removed')
-        d.revoke_consent(paths)
+        deps.revoke_consent(paths)
         (folder / layout.EXTENSION_EXCLUDED_FLAG).unlink(missing_ok=True)
         report.ok('consent_and_flag_removed')
-        if not d.remove_connection_profile(paths):
+        if not deps.remove_connection_profile(paths):
             return report.stop(Protection.CONNECTION_PROFILE_NOT_REMOVED, 'connection_profile')
         report.ok('connection_profile_removed')
-        after = d.check(paths)
+        after = deps.check(paths)
         report.ok('verify', protection=after.get('protection'))
         report.update(status=Protection.REMOVED if after.get('protection') == ProtectionLevel.NOT_INSTALLED else Protection.REMOVED_WITH_LEFTOVERS, finished=True)
     except Exception as exc:

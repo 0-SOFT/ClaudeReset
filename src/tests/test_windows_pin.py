@@ -1,7 +1,9 @@
 import hashlib
+
 import pytest
-from claude_reset.windows.pin import PinnedFile
+
 from claude_reset.safeio import SafetyError
+from claude_reset.windows.pin import PinnedFile
 
 
 def test_pin_denies_overwrite_delete_and_replacement_until_closed(tmp_path):

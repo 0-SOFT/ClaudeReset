@@ -6,13 +6,12 @@ import subprocess
 import webbrowser
 
 import pytest
+from test_reset import paths, platform, populated, write
 
-from test_reset import paths, populated, platform, write
-from claude_reset.reset.planner import build_plan
-from claude_reset.reset.execution import recover_memory
-from claude_reset.reset.core import validate_memory_bundle
 from claude_reset.model.reset import Selection
-from claude_reset.reset.execution import Executor, archive_profiles
+from claude_reset.reset.execution import Executor, archive_profiles, recover_memory
+from claude_reset.reset.memory import validate_memory_bundle
+from claude_reset.reset.planner import build_plan
 from claude_reset.safeio import SafetyError
 
 

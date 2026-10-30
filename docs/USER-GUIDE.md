@@ -177,5 +177,3 @@
 Границы: [GUI-ACCEPTANCE.md](GUI-ACCEPTANCE.md). Лицензии:
 [LICENSE-REVIEW-G6.md](LICENSE-REVIEW-G6.md). Проверки на реальных компьютерах
 пользователей не проводились.
-
-Инструкции прежних версий 0.3–0.4: docs/history/USER-GUIDE-0.3-0.4.md.

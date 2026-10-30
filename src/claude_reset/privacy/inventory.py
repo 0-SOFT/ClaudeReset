@@ -1,16 +1,19 @@
 """Read-only, value-minimized privacy inventory; never a wire-capture verdict."""
 from __future__ import annotations
+
 import os
 import stat
 from pathlib import Path
 from types import MappingProxyType
-from ..model import jsonc
+
+from .. import config, layout
 from ..errors import SafetyError
+from ..model import jsonc
+from ..model.ids import utc_now
 from ..safeio import guarded, tree_entries
 from ..windows.environment import folded
-from .. import config
-from .. import layout
-from ..model.ids import utc_now
+
+__all__ = ['audit', 'cli_settings', 'desktop_context', 'flag_states', 'otel_configuration', 'vscode_settings']
 
 FLAGS = ('DISABLE_TELEMETRY', 'DISABLE_ERROR_REPORTING',
          'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'DO_NOT_TRACK')
@@ -139,7 +142,9 @@ def desktop_context(profile):
             'transmission': 'not_verified', 'supported_opt_out': 'not_verified'}
 
 
-def audit(paths, profiles=None, env=None):
+def audit(paths,
+          profiles=None,   # None: the standard local profiles of paths
+          env=os.environ):
     """Inspect explicit profile roots or the three standard local profiles only.
 
     No application is started; no account storage, request body or secret is exported.
@@ -163,8 +168,8 @@ def audit(paths, profiles=None, env=None):
         results.append({'component': component, **readers[component](root)})
     return {'schema': 1, 'observed_utc': utc_now(),
             'source': 'local_configuration_and_context', 'profiles': results,
-            'caller_environment': flag_states(dict(os.environ) if env is None else env),
-            'caller_opentelemetry': otel_configuration(dict(os.environ) if env is None else env),
+            'caller_environment': flag_states(dict(env)),
+            'caller_opentelemetry': otel_configuration(dict(env)),
             'caller_is_client_environment': False,
             'website': {'account_consent': 'manual_check_required', 'transmission': 'not_verified'},
             'limitations': ['profile_settings_can_be_overridden', 'editor_opt_out_does_not_disable_child_cli',

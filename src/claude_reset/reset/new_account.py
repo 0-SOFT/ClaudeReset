@@ -1,17 +1,21 @@
+"""After the reset, before signing in again: the account pages to open, the program's own fresh Chrome profiles and
+an opt-in check of the public address this process shows.
+"""
 from __future__ import annotations
+
 import ipaddress
 import json
-import os
-from pathlib import Path
-from types import MappingProxyType
-import urllib.request
 import urllib.error
+import urllib.request
+from types import MappingProxyType
 from urllib.parse import urlsplit
-from ..errors import SafetyError
-from ..safeio import guarded
-from .. import config
-from .. import layout
+
+from .. import config, layout
+from ..errors import SafetyError, error_kind
 from ..model.status import Diagnosis
+from ..safeio import guarded
+
+__all__ = ['SERVER_LINKS', 'launch_clean_chrome', 'managed_chrome_profiles', 'network_probe', 'open_server_page']
 
 SERVER_LINKS = MappingProxyType({
     'sessions': 'https://claude.ai/settings/account',
@@ -24,18 +28,6 @@ def open_server_page(kind: str):
     if kind not in SERVER_LINKS:
         raise SafetyError('Unknown server action')
     raise SafetyError('Opening Claude in the shared browser is disabled: that browser is outside the protected area. A verified dedicated launch is required.', code='shared_browser_disabled')
-
-
-def chrome_executable(local: Path):
-    candidates = [local / 'Google/Chrome/Application/chrome.exe']
-    for name in ('PROGRAMFILES', 'PROGRAMFILES(X86)'):
-        if os.environ.get(name):
-            candidates.append(Path(os.environ[name]) / 'Google/Chrome/Application/chrome.exe')
-    for path in candidates:
-        guarded(path, path.parent)
-        if path.is_file():
-            return path
-    raise SafetyError('Google Chrome was not found in supported installation locations')
 
 
 def managed_chrome_directory(paths, run_id: str):
@@ -72,7 +64,7 @@ def managed_chrome_profiles(paths):
 
 
 def launch_clean_chrome(paths, run_id: str, url='https://claude.ai', *, loopback_probe=False):
-    directory = managed_chrome_directory(paths, run_id)
+    managed_chrome_directory(paths, run_id)   # the profile must be ours even though the launch is refused below
     parsed = urlsplit(url)
     try:
         valid = (parsed.scheme == 'https' and parsed.hostname in ('claude.ai', 'claude.com', 'platform.claude.com') and parsed.port in (None, 443))
@@ -92,13 +84,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise SafetyError('Unexpected network-test redirect')
 
 
-def network_probe(opener=None):
+def network_probe(opener=None):   # None: a new opener, which reads the current proxy settings
     """Explicit, opt-in HTTPS observation from THIS process only. No router changes."""
     opener = opener or urllib.request.build_opener(NoRedirect())
     results = []
     for label, url in [('ipv4', 'https://api.ipify.org?format=json'), ('ipv6', 'https://api6.ipify.org?format=json')]:
         try:
-            with opener.open(urllib.request.Request(url, headers={'User-Agent': 'ClaudeReset/0.2 network-check'}), timeout=8) as response:
+            with opener.open(urllib.request.Request(url, headers={'User-Agent': config.USER_AGENT + ' network-check'}), timeout=8) as response:
                 if response.geturl() != url:
                     raise SafetyError('Unexpected endpoint')
                 payload = json.loads(response.read(4097))
@@ -106,7 +98,7 @@ def network_probe(opener=None):
                 if (label == 'ipv4' and address.version != 4) or (label == 'ipv6' and address.version != 6):
                     raise SafetyError('Unexpected address family')
                 results.append({'family': label, 'status': Diagnosis.OBSERVED, 'address': str(address)})
-        except Exception:
-            results.append({'family': label, 'status': Diagnosis.UNAVAILABLE_OR_ERROR})
+        except Exception as exc:
+            results.append({'family': label, 'status': Diagnosis.UNAVAILABLE_OR_ERROR, 'error_type': error_kind(exc)})
     return {'observations': results, 'full_tunnel_verified': False, 'router_modified': False,
             'scope': 'HTTPS requests of this process only; no DNS, WebRTC, UDP or outage certification'}

@@ -11,8 +11,12 @@ import struct
 import zlib
 from pathlib import Path
 from types import MappingProxyType
+
 from .. import layout
 from ..windows import display
+
+__all__ = ['DARK', 'FALLBACK', 'FONTS', 'FONT_DIR', 'LIGHT', 'PALETTES', 'app_icon', 'checkbox', 'dot',
+           'enable_dpi_awareness', 'ico', 'lens', 'mark', 'register_fonts', 'rgb', 'rounded']
 
 LIGHT = MappingProxyType({
     'paper': '#f2f1ec', 'marble': '#f8f7f4', 'mist': '#eceff1', 'haze': '#dce3e8',
@@ -35,9 +39,8 @@ FALLBACK = MappingProxyType({'display': 'Georgia', 'body': 'Segoe UI', 'medium':
 FONT_DIR = layout.PACKAGE_DIR / 'assets' / 'fonts'
 
 
-def register_fonts(directory=FONT_DIR, *, add=None):
+def register_fonts(directory=FONT_DIR, *, add=display.add_private_font):
     """Load the bundled fonts for this process only; nothing is installed into Windows."""
-    add = add or display.add_private_font
     loaded = []
     for file in sorted(Path(directory).glob('*.ttf')):
         try:
@@ -48,13 +51,10 @@ def register_fonts(directory=FONT_DIR, *, add=None):
     return loaded
 
 
-def enable_dpi_awareness(*, api=None):
+def enable_dpi_awareness(*, api=display.set_dpi_awareness):
     """Crisp text on scaled displays; affects this process only. Call before creating Tk."""
     try:
-        if api is None:
-            display.set_dpi_awareness()
-        else:
-            api(1)
+        api()
         return True
     except Exception:
         return False

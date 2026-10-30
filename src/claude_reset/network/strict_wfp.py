@@ -4,20 +4,33 @@ No firewall profiles, routes, DNS or router operations. Every rule has an exact
 application/package identity. The dynamic session must remain owned by the relay.
 """
 from __future__ import annotations
-from dataclasses import dataclass, asdict
+
 import hashlib
 import ipaddress
 import json
+import uuid
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import MappingProxyType
-import uuid
-from ..windows import wfp
-from ..windows.wfp_session import (APP_ID, SECURITY_DESCRIPTOR, Session, blob, condition_blob, condition_sid,
-                                   condition_u32)
-from ..errors import SafetyError
+
 from .. import config
-from ..windows.service_identity import service_descriptor
+from ..errors import SafetyError
+from ..windows import wfp
 from ..windows.wfp import Identity
+from ..windows.wfp_session import (
+    APP_ID,
+    FWP_UINT8,
+    FWP_UINT16,
+    FWP_UINT32,
+    IPPROTO_TCP,
+    Session,
+    blob,
+    condition_blob,
+    condition_sid,
+    condition_u32,
+)
+
+__all__ = ['Engine', 'LAYERS', 'MARK', 'NAMESPACE', 'Rule', 'SUBKEY', 'SUBWEIGHT', 'deny_rules', 'relay_permits']
 
 NAMESPACE = uuid.UUID('ba7c80bc-4fea-45a3-9266-f2c7b78be1ae')
 SUBKEY = wfp.GUID.of(uuid.uuid5(NAMESPACE, 'strict-gate-v1'))
@@ -32,7 +45,6 @@ PORT = wfp.GUID.of('c35a604d-d22b-4e1a-91b4-68f674ee674b')
 PROTOCOL = wfp.GUID.of('3971ef2b-623e-4f9a-8cb1-6e79b806b9a7')
 LOCAL_ADDRESS = wfp.GUID.of('d9ee00de-c1ef-4617-bfe3-ffd8f5a08957')
 LOCAL_PORT = wfp.GUID.of('0c1ba1af-5765-453f-af22-a8f791ac775b')
-SERVICE_USER = wfp.GUID.of('af043a0a-b34d-4f86-979c-c90371af6e66')
 
 
 @dataclass(frozen=True)
@@ -71,32 +83,6 @@ def deny_rules(identities):
     return [Rule(identity, layer) for identity in identities for layer in LAYERS]
 
 
-@dataclass(frozen=True)
-class ServiceRule(Rule):
-    """An endpoint permit usable only by the dedicated service token."""
-    service: str = ''
-
-    def validate(self):
-        if (self.service not in (config.BACKEND_SERVICE, config.GATEWAY_SERVICE,
-                                config.BACKEND_FIXTURE_SERVICE, config.GATEWAY_FIXTURE_SERVICE)
-                or self.identity.kind != 'app' or self.action != PERMIT):
-            raise SafetyError('Only owned service endpoint permits are supported')
-        if self.layer == 'recv_v4':
-            if self.address != config.LOOPBACK:
-                raise SafetyError('Service listeners must use IPv4 loopback')
-            Rule(self.identity, 'connect_v4', self.action, self.address, self.port, self.persistent).validate()
-        else:
-            super().validate()
-
-    @property
-    def key(self):
-        # Stable slot per service/image/direction. Changing an endpoint requires
-        # explicit replacement; it must not accumulate additional permits.
-        value = {'identity': asdict(self.identity), 'role': 'service_endpoint',
-                 'layer': self.layer, 'service': self.service, 'persistent': self.persistent}
-        return wfp.GUID.of(uuid.uuid5(NAMESPACE, json.dumps(value, sort_keys=True)))
-
-
 def relay_permits(identities, port):
     return [Rule(identity, 'connect_v4', PERMIT, config.LOOPBACK, port, False) for identity in identities]
 
@@ -127,8 +113,7 @@ class Engine(Session):
         if rule.persistent and self.dynamic:
             raise SafetyError('Persistent objects cannot belong to a dynamic session')
         keep = []
-        service = getattr(rule, 'service', None)
-        conditions = (wfp.CONDITION * ((4 if rule.action == PERMIT else 1) + bool(service)))()
+        conditions = (wfp.CONDITION * (4 if rule.action == PERMIT else 1))()
         if rule.identity.kind == 'package':
             condition_sid(conditions[0], wfp.FIELD_PACKAGE_ID, wfp.package_sid(rule.identity.value), keep)
         else:
@@ -136,17 +121,16 @@ class Engine(Session):
         if rule.action == PERMIT:
             fields = (LOCAL_ADDRESS, LOCAL_PORT, PROTOCOL) if rule.layer == 'recv_v4' else (REMOTE, PORT, PROTOCOL)
             for condition, field, dtype, value in zip(conditions[1:], fields,
-                                                     (3, 2, 1), (int(ipaddress.ip_address(rule.address)), rule.port, 6)):
+                                                     (FWP_UINT32, FWP_UINT16, FWP_UINT8),
+                                                     (int(ipaddress.ip_address(rule.address)), rule.port, IPPROTO_TCP)):
                 condition_u32(condition, field, dtype, value)
-        if service:
-            condition_blob(conditions[-1], SERVICE_USER, SECURITY_DESCRIPTOR, service_descriptor(service), keep)
         mark = MARK + hashlib.sha256(json.dumps(asdict(rule), sort_keys=True).encode()).digest()
         keep.append(conditions)
         f = wfp.FILTER(filterKey=rule.key, displayData=wfp.DISPLAY('ClaudeReset strict ' + ('deny' if rule.action == BLOCK else 'permit'), None),
                        flags=1 if rule.persistent else 0, providerData=blob(mark, keep),
                        layerKey=LAYERS[rule.layer], subLayerKey=self.sublayer_key, numFilterConditions=len(conditions),
                        filterCondition=conditions)
-        f.weight.type, f.weight.value.u8 = 1, 15 if rule.action == PERMIT else 1
+        f.weight.type, f.weight.value.u8 = FWP_UINT8, 15 if rule.action == PERMIT else 1
         f.action.type = rule.action
         return f, keep
 

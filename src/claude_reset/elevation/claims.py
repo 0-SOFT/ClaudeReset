@@ -4,20 +4,21 @@ The pending file is an exclusive claim, not a cache. A crash, malformed file, di
 failure never authorizes replay. `chain` is the owner of the synchronous call chain that holds the claim.
 """
 from __future__ import annotations
-from dataclasses import asdict, dataclass
-from contextvars import ContextVar
-from functools import wraps
+
 import json
 import os
+from contextvars import ContextVar
+from dataclasses import asdict, dataclass
+from functools import wraps
 from pathlib import Path
 
-from ..errors import SafetyError
-from ..safeio import guarded
-from .locks import locked, AdmissionUnavailable
 from .. import layout
-from ..model.status import Elevation
-from ..model.records import RequestInventory, exact
+from ..errors import SafetyError
 from ..model.ids import new_id
+from ..model.records import RequestInventory, exact
+from ..model.status import Elevation
+from ..safeio import guarded
+from .locks import AdmissionUnavailable, locked
 
 __all__ = ['OPERATIONS', 'ChildAdmissionRefused', 'Owner', 'Request', 'blocked', 'chain', 'claim_matches', 'inventory',
            'inventory_path', 'pending_path', 'receipt_identity', 'request_marker', 'require_expected',
@@ -28,8 +29,7 @@ class ChildAdmissionRefused(SafetyError):
     """No child effect began; callers must preserve existing receipts."""
 
 
-OPERATIONS = frozenset({'start', 'remove', 'autostart', 'autostart-off', 'package-register', 'package-remove',
-                        'filters'})
+OPERATIONS = frozenset({'start', 'remove', 'autostart', 'autostart-off', 'package-register', 'package-remove'})
 
 
 chain = ContextVar('mutation_owner', default=None)
@@ -43,7 +43,8 @@ class Owner:
     start_request: object = None
 
 
-def serialized(operation, *, completed, nested=False, nested_completed=None):
+def serialized(operation, *, completed, nested=False,
+               nested_completed=None):   # None: the same as completed
     """Own the existing arbitration file for the entire synchronous chain.
 
     Failure is conservatively retained: a returned failure cannot establish

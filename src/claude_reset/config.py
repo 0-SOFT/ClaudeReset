@@ -3,9 +3,16 @@
 Names that already exist on installed computers (tasks, packages, services, Program Files folders) are
 fixed: changing one needs a migration of those computers.
 """
-from types import MappingProxyType
+
+__all__ = ['BACKEND_API_PORT', 'BACKEND_PORT', 'BACKEND_TASK', 'BACKEND_URL', 'BACKEND_WORKER', 'CHROME_PROFILES',
+           'CLAUDE_HOST', 'CONTROLLER_EXE', 'CONTROLLER_TASK', 'DESKTOP_PACKAGE', 'DESKTOP_POLICY_KEY',
+           'DESKTOP_PROXY_VALUE', 'ENGINE_ROUTE_TAG', 'L1_PROGRAM', 'LOCAL_BACKEND_IDENTITY', 'LOOPBACK', 'NO_PROXY',
+           'OWNED_PACKAGE', 'OWNED_PACKAGE_NAME', 'OWN_PORTS', 'PRODUCT_NAME', 'PROXY_VARIABLES', 'PYTHONW',
+           'RECOVERY_TASK', 'RECOVERY_WATCH', 'RELAY_PORT', 'RELAY_URL', 'RUNNER_EXE', 'VSCODE_ENVIRONMENT',
+           'VSCODE_WRAPPER', 'loopback_url']
 
 PRODUCT_NAME = 'ClaudeReset'
+PUBLISHER = '0-soft'             # the installer's publisher in Windows' list of apps
 
 LOOPBACK = '127.0.0.1'
 BACKEND_PORT = 25080       # local proxy of the selected tunnel engine
@@ -23,6 +30,7 @@ RELAY_URL = loopback_url(RELAY_PORT)
 PROXY_VARIABLES = ('HTTP_PROXY', 'HTTPS_PROXY')
 NO_PROXY = 'localhost,127.0.0.1,::1'
 CLAUDE_HOST = 'claude.ai'
+USER_AGENT = PRODUCT_NAME          # the program's own HTTP checks; no version, nothing that identifies the PC
 
 CONTROLLER_TASK = 'ClaudeReset L1 Controller'
 RECOVERY_TASK = 'ClaudeReset L1 Recovery'
@@ -31,11 +39,13 @@ RECOVERY_TASK = 'ClaudeReset L1 Recovery'
 BACKEND_TASK = 'ClaudeReset-SnowProxy'
 ENGINE_ROUTE_TAG = 'snow-only'                              # the engine's single outbound and final route
 LOCAL_BACKEND_IDENTITY = 'installed_reviewed_snow_vless_reality'  # tunnel identity in controller plans
-LEGACY_WFP_MARKS = MappingProxyType({'desktop': b'ClaudeReset-Snow-Desktop-v1', 'code': b'ClaudeReset-Code-Snow-v1',
-                                     'owned': b'ClaudeReset-Owned-Identity-Snow-v1'})
 
 CONTROLLER_EXE = 'ClaudeReset.exe'
 RUNNER_EXE = 'ClaudeResetRun.exe'
+L1_PROGRAM = 'ClaudeReset-L1'           # Program Files folder of the installed L1 controller and runner
+BACKEND_WORKER = 'proxy_worker.py'       # the backend task's script, in the backend's working folder
+RECOVERY_WATCH = 'l1_recovery_watch.py'  # the script the recovery task runs (tools/)
+CHROME_PROFILES = 'ChromeProfiles'       # fresh Chrome profiles of the Claude site, in the state root
 PYTHONW = 'pythonw.exe'
 
 DESKTOP_PACKAGE = ('Claude_pzs8sxrjxfjjc', 'Claude')        # (package family, application id)
@@ -45,12 +55,6 @@ DESKTOP_PROXY_VALUE = 'egressProxyUrl'
 OWNED_PACKAGE_NAME = 'ClaudeReset.NetworkIsolation'
 OWNED_PACKAGE = ('ClaudeReset.NetworkIsolation_79st3xwgefr0c', 'IsolatedTools')
 
-BACKEND_SERVICE = 'ClaudeResetBackend'
-GATEWAY_SERVICE = 'ClaudeResetGateway'
-BACKEND_FIXTURE_SERVICE = 'ClaudeResetBackendFixture'   # disposable services of the service tests
-GATEWAY_FIXTURE_SERVICE = 'ClaudeResetGatewayFixture'
-# Windows services of the prepared service bundle, in inventory order: our two, then the Sandboxie broker.
-BUNDLE_SERVICES = (BACKEND_SERVICE, GATEWAY_SERVICE, 'SbieSvc', 'SbieDrv')
 
 # Settings of the Claude Code extension that the program writes into VS Code.
 VSCODE_ENVIRONMENT = 'claudeCode.environmentVariables'

@@ -1,14 +1,18 @@
 """Short-lived package-identity worker; IPC is authenticated by user DPAPI."""
 from __future__ import annotations
+
 import json
-from pathlib import Path
 import re
 import time
-from ..windows.cng import Provider, KEY_PATTERN, package_identity, selftest
-from ..errors import SafetyError
-from ..safeio import guarded, atomic_bytes
-from ..windows.system import DPAPI
+from pathlib import Path
+
 from .. import layout
+from ..errors import SafetyError, error_kind
+from ..safeio import atomic_bytes, guarded
+from ..windows.cng import KEY_PATTERN, Provider, package_identity, selftest
+from ..windows.dpapi import DPAPI
+
+__all__ = ['FAMILY', 'main']
 
 FAMILY = 'Claude_pzs8sxrjxfjjc'
 
@@ -54,7 +58,7 @@ def main(request_path):
     try:
         result = {'ok': True, 'payload': dispatch(request)}
     except Exception as exc:
-        result = {'ok': False, 'error_type': type(exc).__name__}
+        result = {'ok': False, 'error_type': error_kind(exc)}
     result['nonce'] = request.get('nonce')
     atomic_bytes(path.parent / 'response.dpapi', crypto.encrypt(json.dumps(result).encode()), root)
     return 0 if result['ok'] else 1

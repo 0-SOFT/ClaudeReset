@@ -1,15 +1,16 @@
 """Close submission uses temporary state only; no controller is started."""
+import functools
 import json
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
-
-from claude_reset.network import controller as guard
-from claude_reset import layout
-from claude_reset.elevation import request as uac
-from claude_reset.elevation import claims
 from test_reset import paths
+
+from claude_reset import layout
+from claude_reset.elevation import claims
+from claude_reset.elevation import request as uac
+from claude_reset.network import controller as guard
 
 
 class FixtureProcess:
@@ -23,8 +24,10 @@ class FixtureProcess:
 
 @pytest.fixture(autouse=True)
 def process_witness(monkeypatch):
+    """The close request waits on the fixture process: request_close takes no process factory of its own."""
     from claude_reset.network import controller_process
-    monkeypatch.setattr(controller_process, 'RetainedProcess', FixtureProcess)
+    monkeypatch.setattr(controller_process, 'close_and_wait',
+                        functools.partial(controller_process.close_and_wait, process_factory=FixtureProcess))
 
 
 def seed(paths):
@@ -47,7 +50,7 @@ def test_standalone_submission_retains_claim_and_prevents_replay(paths):
 
 
 def test_busy_close_does_not_even_read_controller_status(paths, monkeypatch):
-    uac.prepare(paths, 'filters')
+    uac.prepare(paths, 'remove')
     monkeypatch.setattr(guard, 'read_json', lambda *a: pytest.fail('status read'))
     assert guard.request_close(paths)['retry_blocked'] is True
 

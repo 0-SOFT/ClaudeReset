@@ -1,9 +1,11 @@
 import json
-import pytest
-from claude_reset.windows import cleanup_actions as ca
-from claude_reset.safeio import SafetyError
 from functools import partial
+
+import pytest
+
 from claude_reset.model import clients
+from claude_reset.safeio import SafetyError
+from claude_reset.windows import cleanup_actions as ca
 
 
 def test_credential_scope_matches_ps1_without_passwords(monkeypatch):

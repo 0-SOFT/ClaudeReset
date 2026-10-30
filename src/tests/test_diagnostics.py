@@ -1,17 +1,18 @@
 import json
 import threading
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
+
 import pytest
 from dialog_fakes import Dialogs
-from test_reset import paths, platform, FakeCrypto, apply, plan_for
+from test_reset import FakeCrypto, apply, paths, plan_for, platform
+
 from claude_reset.privacy.browser_probe import browser_measurement, validate_measurement
-from claude_reset.reset.new_account import launch_clean_chrome
-from claude_reset.reset.new_account import managed_chrome_profiles
-from claude_reset.safeio import SafetyError
+from claude_reset.reset.new_account import launch_clean_chrome, managed_chrome_profiles
 from claude_reset.reset.planner import build_plan
-from claude_reset.windows.system import ps_json
+from claude_reset.safeio import SafetyError
+from claude_reset.windows.powershell import ps_json
 
 
 def test_browser_measurement_loopback_only():
@@ -93,30 +94,30 @@ def test_managed_profile_discovery_requires_valid_owned_marker(paths):
 
 
 def test_open_chrome_single_profile_and_ambiguous_selection(paths):
-    from claude_reset.ui.expert_window import App
     from types import SimpleNamespace
+
+    from claude_reset.ui.expert.analysis import AnalysisTab
     first = plan_for(paths, ('chrome',))
     apply(paths, first)
     launched = []
     app = SimpleNamespace(paths=paths, last_run=None, safe=lambda fn: fn(), launch_chrome=lambda p, r: launched.append(r),
                           dialogs=Dialogs(askopenfilename=lambda **kw: pytest.fail('Single profile needs no picker')))
-    App.open_chrome(app)
+    AnalysisTab(app).open_chrome()
     assert launched == [first.id]
     second = plan_for(paths, ('chrome',))
     apply(paths, second)
     app.last_run = None
     app.dialogs.answers['askopenfilename'] = ''
-    App.open_chrome(app)
+    AnalysisTab(app).open_chrome()
     assert app.last_run is None and launched == [first.id]
 
 
-def test_windows_inspection_timeout_is_sanitized(monkeypatch):
+def test_windows_inspection_timeout_is_sanitized():
     import subprocess
     def fail(*args, **kw):
         raise subprocess.TimeoutExpired('SECRET_COMMAND', 55)
-    monkeypatch.setattr('claude_reset.windows.system.subprocess.run', fail)
     with pytest.raises(SafetyError) as error:
-        ps_json('fixture')
+        ps_json('fixture', runner=fail)
     assert 'SECRET_COMMAND' not in str(error.value)
 
 

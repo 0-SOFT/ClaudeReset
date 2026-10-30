@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-from claude_reset.network import l1_settings as own
 from claude_reset import config
+from claude_reset.network import l1_settings as own
 
 ENV = [{'name': 'HTTP_PROXY', 'value': config.RELAY_URL}, {'name': 'HTTPS_PROXY', 'value': config.RELAY_URL},
        {'name': 'NO_PROXY', 'value': 'localhost,127.0.0.1,::1'}]

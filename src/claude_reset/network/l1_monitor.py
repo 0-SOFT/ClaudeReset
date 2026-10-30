@@ -7,8 +7,11 @@ client offline. Prevention of direct traffic never depends on this loop: it come
 endpoint pin and the client deny rules.
 """
 import json
-from ..model.status import Measurement
+
 from ..model.ids import utc_now
+from ..model.status import Measurement
+
+__all__ = ['HISTORY', 'HISTORY_LIMIT', 'PROBE_TOLERANCE', 'monitor_error', 'probe_verdict', 'record_exit']
 
 PROBE_TOLERANCE = 6  # consecutive 5 s polls
 HISTORY = 'controller-history.log'

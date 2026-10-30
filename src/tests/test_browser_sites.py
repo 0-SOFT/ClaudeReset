@@ -3,14 +3,15 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
-from claude_reset.model.confirmation import Confirmation
-
 from dialog_fakes import script
-from test_reset import paths
-from claude_reset.reset import browser_sites as sites
-from claude_reset.ui import expert_window as app
-from claude_reset.safeio import SafetyError
 from scripted import Strict
+from test_reset import paths
+
+from claude_reset.model.confirmation import Confirmation
+from claude_reset.reset import browser_sites as sites
+from claude_reset.safeio import SafetyError
+from claude_reset.ui import expert_window as app
+from claude_reset.ui.expert.cleanup import CleanupTab
 
 
 @pytest.fixture
@@ -84,14 +85,15 @@ def test_gui_dispatch_and_cancel():
     ui.show_json = received.append
     ui.run = lambda work, callback: callback(work())
     ui.browser_sites = Strict(site_data=lambda paths, **kw: calls.append(kw) or {'ok': True})
-    ui.preview_browser_sites()
+    tab = CleanupTab(ui)
+    tab.preview_browser_sites()
     script(ui, askstring=None)
-    ui.clear_browser_sites()
+    tab.clear_browser_sites()
     assert calls == [{}]
     script(ui, askstring='СТЕРЕТЬ')
-    ui.clear_browser_sites()
+    tab.clear_browser_sites()
     assert calls[-1] == {'erase': True, 'confirmation': Confirmation.ERASE}
-    ui.report_external_scope()
+    tab.report_external_scope()
     assert received[-1]['mode'] == 'report_only'
 
 
@@ -148,12 +150,13 @@ def test_manual_settings_gui_selection_cancel_and_empty():
     ui.show_json = reports.append
     ui.browser_sites = Strict(manual_cleanup_profiles=[{'browser': 'Edge', 'profile_number': 1}],
                               open_site_settings=lambda paths, number: calls.append(number) or {'status': 'manual_action_required'})
+    tab = CleanupTab(ui)
     script(ui, askinteger=None)
-    ui.browser_site_settings()
+    tab.browser_site_settings()
     assert calls == []
     script(ui, askinteger=1)
-    ui.browser_site_settings()
+    tab.browser_site_settings()
     assert calls == [1] and reports[-1]['status'] == 'manual_action_required'
     ui.browser_sites.answers['manual_cleanup_profiles'] = []
-    ui.browser_site_settings()
+    tab.browser_site_settings()
     assert calls == [1]

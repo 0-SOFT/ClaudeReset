@@ -6,13 +6,16 @@ The window chooses its `Language` when it is built (as in Windows or chosen by t
 parts. Texts produced by the logic modules (blockers, protection states, messages) stay Russian there and are
 translated when shown.
 """
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from types import MappingProxyType
 
 from .ru import GUI_MESSAGES
 
-__all__ = ['ENGLISH', 'RUSSIAN', 'Language', 'error_text', 'gui_message', 'render', 'say']
+__all__ = ['ENGLISH', 'JSON_FILES', 'RUSSIAN', 'Language', 'error_text', 'gui_message', 'render', 'say']
+
+# The file-dialog filter of every JSON file the windows open or save.
+JSON_FILES = (('JSON', '*.json'),)
 
 SIZE = re.compile(r'(\d+),(\d) (ГБ|МБ|КБ)\b|(\d+) Б\b')
 UNITS = MappingProxyType({'ГБ': 'GB', 'МБ': 'MB', 'КБ': 'KB'})

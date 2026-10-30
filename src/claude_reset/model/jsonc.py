@@ -1,10 +1,11 @@
 """Strict JSON-with-comments reader and small, comment-preserving top-level edits."""
 from __future__ import annotations
+
 import json
 from pathlib import Path
-from ..errors import SafetyError
-from ..safeio import guarded, atomic_bytes
-from ..errors import LimitExceeded, SchemaError
+
+from ..errors import LimitExceeded, SafetyError, SchemaError
+from ..safeio import atomic_bytes, guarded
 
 __all__ = ['loads', 'read', 'set_property', 'strict_loads', 'unique']
 
@@ -99,19 +100,16 @@ def set_property(path: Path, root: Path, key: str, value):
     decoder = json.JSONDecoder()
     pos = stripped.index('{') + 1
     replacement = json.dumps(value, ensure_ascii=False)
-    last_end = None
     while True:
         while stripped[pos].isspace() or stripped[pos] == ',':
             pos += 1
         if stripped[pos] == '}':
-            closing = pos
             break
         name, pos = decoder.raw_decode(stripped, pos)
         while stripped[pos].isspace() or stripped[pos] == ':':
             pos += 1
         start = pos
         _, pos = decoder.raw_decode(stripped, pos)
-        last_end = pos
         if name == key:
             updated = original[:start] + replacement + original[pos:]
             break

@@ -20,12 +20,13 @@ import threading
 from multiprocessing.connection import AuthenticationError, Client, Listener
 from pathlib import Path
 
-from ..errors import SafetyError
-from .. import config
-from .. import layout
+from .. import config, layout
+from ..errors import SafetyError, error_kind
+from ..model.ids import utc_now
 from ..windows import powershell, process
 from ..windows.job import KillOnClose
-from ..model.ids import utc_now
+
+__all__ = ['drive', 'is_reviewed_binary', 'main', 'pump_job', 'pump_main', 'wrapper_main']
 
 FAMILY, APP = config.OWNED_PACKAGE
 STDIN, STDIN_EOF, STDOUT, STDERR, EXIT = range(5)
@@ -39,7 +40,7 @@ def state_folder():
     return Path.home() / layout.TOOL_HOME
 
 
-def is_reviewed_binary(path, home=None):
+def is_reviewed_binary(path, home=None):   # None: Path.home(), looked up on each call
     """Only the Claude images the L1 deny rules already name may be started by the pump."""
     home = Path(home or Path.home())
     try:
@@ -147,7 +148,7 @@ def pump_main(pipe, hex_key):
 
 # ----- wrapper (ordinary process owning the caller's stdio) ------------------------------------
 
-def start_pump(pipe, key, executable, runner=None):
+def start_pump(pipe, key, executable, runner=powershell.run_process):
     arguments = f'--protected-pump {pipe} {key.hex()}'
     command = (f'Invoke-CommandInDesktopPackage -PackageFamilyName {powershell.quote(FAMILY)} -AppId {powershell.quote(APP)} '
                f'-Command {powershell.quote(executable)} -Args {powershell.quote(arguments)} -PreventBreakaway')
@@ -218,9 +219,9 @@ def run_direct(argv):
     return process.run_attached(argv, environment)
 
 
-def wrapper_main(argv, *, interactive=False, pump_executable=None, connector=connect, direct=run_direct):
+def wrapper_main(argv, *, interactive=False, pump_executable=Path(sys.executable).with_name(config.CONTROLLER_EXE),
+                 connector=connect, direct=run_direct):
     """argv = [claude.exe, args...]; the exit code is the binary's. direct runs the binary without the package."""
-    pump_executable = pump_executable or Path(sys.executable).with_name(config.CONTROLLER_EXE)
     if (state_folder() / 'disable-wrapper.flag').exists():
         log('direct', 'disable-wrapper.flag present')
         return direct(argv)
@@ -230,7 +231,7 @@ def wrapper_main(argv, *, interactive=False, pump_executable=None, connector=con
     try:
         conn = connector(pump_executable)
     except (SafetyError, OSError, process.SubprocessError) as exc:
-        log('direct', type(exc).__name__)
+        log('direct', error_kind(exc))
         sys.stderr.write('ClaudeReset: package launch failed; running without coverage of child processes\n')
         return direct(argv)
     log('package', 'interactive' if interactive else 'piped')

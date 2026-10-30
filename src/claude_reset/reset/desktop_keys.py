@@ -1,29 +1,36 @@
 """Reviewable, journaled deletion of account-scoped Desktop CNG keys in MSIX."""
 from __future__ import annotations
+
 import hashlib
 import json
-from pathlib import Path
 import re
-from ..model import jsonc
-from ..windows.cng import KEY_PATTERN
+from pathlib import Path
+
+from .. import layout
+from ..errors import SafetyError, error_kind
+from ..model import clients, jsonc
 from ..model.compatibility import CLIENTS
+from ..model.ids import new_id
+from ..model.status import Reset
+from ..safeio import atomic_bytes, atomic_json, guarded
+from ..windows.cng import KEY_PATTERN
+from ..windows.dpapi import DPAPI
+from ..windows.inventory import inspect_runtime
+from ..windows.powershell import ps_json
 from .execution import operation_lock
 from .native import call_native
 from .native_worker import FAMILY
-from ..errors import SafetyError
-from ..safeio import guarded, atomic_bytes, atomic_json
-from ..windows.system import DPAPI, inspect_runtime, ps_json
-from .. import layout
-from ..model import clients
-from ..model.status import Reset
-from ..model.ids import new_id
+
+__all__ = ['Desktop', 'FILES', 'VALIDATED_INSTALLATIONS', 'apply_plan', 'create_plan', 'no_owners', 'private_read',
+           'private_write', 'review_plan', 'select_keys', 'verify_after_reset', 'verify_installation']
 
 VALIDATED_INSTALLATIONS = CLIENTS['desktop']['native_reset_hashes']
 UUID = re.compile('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\Z')
 FILES = ('ant-device-registry.json', 'ant-device-key-generation.json')
 
 
-def verify_installation(*, package=None, validated=VALIDATED_INSTALLATIONS):
+def verify_installation(*, package=None,   # None: read from Windows on each call
+                        validated=VALIDATED_INSTALLATIONS):
     """The installed Desktop is a validated version and its code files hash as reviewed.
 
     package is Windows' record of the installed package (read here when not given); validated maps versions to
@@ -122,8 +129,8 @@ def _report(plan):
 
 
 class Desktop:
-    """What the key reset asks of this PC: the validated installation, no running owner, the profile folder and
-    the native worker inside the package. A test gives the reset a scripted one."""
+    """What the key reset asks of this PC (the validated installation, no running owner, the profile folder and
+    the native worker inside the package): the port tests replace with a scripted one."""
 
     def verify_installation(self) -> None:
         verify_installation()
@@ -153,8 +160,7 @@ def review_plan(paths, run_id):
         return _report(plan)
 
 
-def create_plan(paths, profile, *, desktop=None):
-    desktop = desktop or Desktop()
+def create_plan(paths, profile, *, desktop=Desktop()):
     desktop.verify_installation()
     profile = desktop.profile(paths, profile)
     with operation_lock(paths):
@@ -175,8 +181,7 @@ def create_plan(paths, profile, *, desktop=None):
         return report
 
 
-def verify_after_reset(paths, run_id, *, desktop=None):
-    desktop = desktop or Desktop()
+def verify_after_reset(paths, run_id, *, desktop=Desktop()):
     """Observe the client's new registration; never create or delete a key."""
     if not re.fullmatch('[a-f0-9]{32}', run_id):
         raise SafetyError('Invalid native verification run ID')
@@ -221,8 +226,7 @@ def verify_after_reset(paths, run_id, *, desktop=None):
         return report
 
 
-def apply_plan(paths, run_id, *, server_step_complete=False, desktop=None):
-    desktop = desktop or Desktop()
+def apply_plan(paths, run_id, *, server_step_complete=False, desktop=Desktop()):
     if not re.fullmatch('[a-f0-9]{32}', run_id) or not server_step_complete:
         raise SafetyError('Native apply requires an exact reviewed run and server revocation confirmation')
     desktop.verify_installation()
@@ -300,6 +304,6 @@ def apply_plan(paths, run_id, *, server_step_complete=False, desktop=None):
             atomic_json(run / layout.RESULT_FILE, report, paths.state)
             return report
         except Exception as exc:
-            report.update(status=Reset.FAILED_OR_PARTIAL, desktop_keys='checkpoint_requires_verification', error_type=type(exc).__name__)
+            report.update(status=Reset.FAILED_OR_PARTIAL, desktop_keys='checkpoint_requires_verification', error_type=error_kind(exc))
             atomic_json(run / layout.RESULT_FILE, report, paths.state)
             raise SafetyError('Native reset stopped; its encrypted checkpoint supports verified continuation') from None

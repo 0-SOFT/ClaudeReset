@@ -1,13 +1,16 @@
 """Confirmation counts come from the private plan, without calling native deletion."""
 import json
 from types import SimpleNamespace
+
 import pytest
-from test_reset import paths
-from test_native import native_setup
-from claude_reset.reset import desktop_keys as dk
-from claude_reset.ui.expert_window import App
-from claude_reset.safeio import SafetyError
 from dialog_fakes import Dialogs
+from test_native import native_setup
+from test_reset import paths
+
+from claude_reset.reset import desktop_keys as dk
+from claude_reset.safeio import SafetyError
+from claude_reset.ui.expert.settings import SettingsTab
+
 
 @pytest.mark.parametrize('public_report',['forged','missing'])
 def test_native_gui_confirmation_uses_private_plan(paths,native_setup,monkeypatch,public_report):
@@ -23,7 +26,7 @@ def test_native_gui_confirmation_uses_private_plan(paths,native_setup,monkeypatc
     app=SimpleNamespace(paths=paths,server_done=SimpleNamespace(get=lambda:True),
                         run=lambda action,callback:callback(action()),show_json=lambda value:None,dialogs=dialogs,
                         desktop=desktop)
-    App.apply_desktop_keys(app)
+    SettingsTab(app).apply_desktop_keys()
     assert len(prompts)==1 and ': аккаунтов 1, ключей 1.' in prompts[0]
     assert not calls and len(inventory['keys'])==1
 

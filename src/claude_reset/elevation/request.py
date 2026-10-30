@@ -4,26 +4,41 @@ Only the original owner of a claim (see claims) may release it after a definitiv
 successful receipt.
 """
 from __future__ import annotations
-from dataclasses import asdict
+
 import json
 import os
-from pathlib import Path
 import time
-
-from ..errors import SafetyError
-from ..safeio import guarded
-from .locks import locked
-from . import claims
-from .claims import (OPERATIONS, ChildAdmissionRefused, Request, chain, claim_matches, inventory, inventory_path,
-                     pending_path, receipt_identity, request_marker, require_expected, require_generation_open,
-                     require_not_revoked)
-from . import admission as controller_admission
-from . import child_process
-from .. import layout
-from ..model.status import Elevation, Package
-from ..model.records import Claim, SchedulerCount, exact
+from dataclasses import asdict
+from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
+
+from .. import layout
+from ..errors import SafetyError, error_kind
 from ..model.ids import new_id
+from ..model.records import Claim, SchedulerCount, exact
+from ..model.status import Elevation, Package
+from ..safeio import guarded
+from . import admission as controller_admission
+from . import child_process, claims
+from .claims import (
+    OPERATIONS,
+    ChildAdmissionRefused,
+    Request,
+    chain,
+    claim_matches,
+    inventory,
+    inventory_path,
+    pending_path,
+    receipt_identity,
+    request_marker,
+    require_expected,
+    require_generation_open,
+    require_not_revoked,
+)
+from .locks import locked
+
+__all__ = ['admission_denied', 'admit_child', 'child_event', 'execute', 'prepare', 'read_receipt', 'record_event',
+           'release', 'revoke', 'schedule', 'scheduler_count', 'verdict']
 
 
 
@@ -292,13 +307,6 @@ def read_receipt(request):
     return row
 
 
-def filter_verdict(row: dict) -> Elevation | None:
-    # This describes a read result, not process exit or release authority.
-    if row.get('finished') is True and row.get('read_only') is True and row.get('filters_changed') is False:
-        return Elevation.INSPECTION_FINISHED
-    return None
-
-
 def start_verdict(row: dict) -> Elevation | None:
     if (row.get('finished') is not True and row.get('state') == 'relay_open' and row.get('passed') is True
             and row.get('persistent_boundary') is True and row.get('live_permit_session') is True):
@@ -320,8 +328,6 @@ def autostart_removed(row: dict) -> bool:
 
 
 def verdict(request: Request, row: dict) -> Elevation | None:
-    if request.operation == 'filters':
-        return filter_verdict(row)
     if 'error' in row or 'error_type' in row:
         return Elevation.RECONCILE_REQUIRED if row.get('finished') is True else None
     if request.operation == 'start':
@@ -374,9 +380,9 @@ def execute(paths, operation, dispatch, *, wait_seconds=300, clock=time.monotoni
             if clock() >= deadline:
                 return outcome(Elevation.UNKNOWN)
             sleep(min(1, max(0, deadline - clock())))
-    except Exception:
+    except Exception as exc:
         # A failed wait or dispatch cannot prove that no effects happened.
-        return outcome(Elevation.UNKNOWN)
+        return {**outcome(Elevation.UNKNOWN), 'error_type': error_kind(exc)}
     finally:
         owner = chain.get()
         # Success/denial leaves no unresolved child. All other exits prevent

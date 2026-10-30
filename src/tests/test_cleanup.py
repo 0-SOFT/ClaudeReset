@@ -1,12 +1,12 @@
 import json
-import pytest
-from claude_reset.model.confirmation import Confirmation
 
-from claude_reset.reset.cleanup import preview, audit, fixed_targets
+import pytest
+
 from claude_reset.layout import Paths
+from claude_reset.model.confirmation import Confirmation
+from claude_reset.reset.cleanup import WipeExecutor, audit, fixed_targets, prepare_wipe, preview
 from claude_reset.safeio import SafetyError
-from claude_reset.reset.cleanup import prepare_wipe, WipeExecutor
-from claude_reset.windows.system import DPAPI
+from claude_reset.windows.dpapi import DPAPI
 
 
 def offline():

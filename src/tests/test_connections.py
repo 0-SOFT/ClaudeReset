@@ -5,16 +5,15 @@ import threading
 from contextlib import contextmanager
 
 import pytest
-
-from test_reset import paths, FakeCrypto
-from claude_reset.backend import location as backend_location
-from claude_reset.network import connections as c, legacy_guard as netguard
-from claude_reset.reset import verification
-from claude_reset import cli
-from claude_reset.safeio import SafetyError
-from claude_reset import config
-from claude_reset import layout
 from cli_env import folders
+from test_reset import FakeCrypto, paths
+
+from claude_reset import cli, config, layout
+from claude_reset.backend import location as backend_location
+from claude_reset.network import connections as c
+from claude_reset.network import remote_backend
+from claude_reset.reset import verification
+from claude_reset.safeio import SafetyError
 
 
 def profile(**updates):
@@ -171,20 +170,17 @@ def test_failed_tls_is_not_accepted_as_exit_measurement():
     assert 'exit_ip' not in result
 
 
-def test_guard_probe_refuses_changed_backend_before_any_network(monkeypatch):
-    monkeypatch.setattr(backend_location, 'locate_guard', lambda: object())
-    monkeypatch.setattr(backend_location, 'status', lambda _: {'passed': False})
-    monkeypatch.setattr(netguard, 'https_status', lambda *a: pytest.fail('Unsafe network request'))
-    assert netguard.probe(None)['network_requests'] == 0
-
-
 def test_cli_profile_save_check_and_nonzero_exit_on_mismatch(paths, monkeypatch, capsys):
     root = folders(monkeypatch, paths)
     source = paths.local / 'connection.json'
     source.write_text(json.dumps(profile()), encoding='utf-8')
     assert cli.main(['--connection-save', str(source)] + root) == 0
-    monkeypatch.setattr(c, 'measure', lambda _: {'status': 'measured', 'exit_ip': '1.1.1.1'})
+    # The command line has no parameters for doubles: its check gets the measurement through its own parameter.
+    check_saved, measured = remote_backend.check_saved, []
+    monkeypatch.setattr(remote_backend, 'check_saved', lambda p, **kw: check_saved(
+        p, measure_local=lambda proxy: measured.append(proxy) or {'status': 'measured', 'exit_ip': '1.1.1.1'}, **kw))
     assert cli.main(['--connection-check'] + root) == 2
+    assert measured
     assert '1.1.1.1' not in capsys.readouterr().out
 
 

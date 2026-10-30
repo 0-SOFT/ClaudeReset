@@ -4,13 +4,15 @@ No Credential Manager enumeration, deletion or migration is authorized here.
 Absence of these indicators is not proof that a client never used OS storage.
 """
 from pathlib import Path
-from ..model import jsonc
+
+from .. import config, layout
 from ..errors import SafetyError
+from ..model import jsonc
+from ..model.notes import Note
 from ..safeio import guarded
 from ..windows.environment import folded
-from .. import config
-from .. import layout
-from ..model.notes import Note
+
+__all__ = ['BLOCKER', 'VARIABLES', 'indicators']
 
 VARIABLES = frozenset({'CLAUDE_SECURESTORAGE_CONFIG_DIR', 'CLAUDE_CODE_FORCE_WINDOWS_CREDMAN'})
 BLOCKER = Note('plan.secure_storage')

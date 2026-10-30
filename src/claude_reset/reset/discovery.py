@@ -1,17 +1,22 @@
 """Read-only discovery. Paths stay local; reports expose categories and counts."""
 from __future__ import annotations
-from dataclasses import dataclass, field
+
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
-from ..model import jsonc
-from .catalog import AUTH_VARS, AUTH_SETTINGS
-from ..safeio import guarded
-from ..windows.environment import folded
-from .secure_storage import indicators as secure_storage_indicators, BLOCKER as SECURE_STORAGE_BLOCKER
+
 from .. import layout
-from ..model.status import Reset
+from ..model import jsonc
 from ..model.notes import Note, unique
 from ..model.reset import Selection
+from ..model.status import Reset
+from ..safeio import guarded
+from ..windows.environment import folded
+from .catalog import AUTH_SETTINGS, AUTH_VARS
+from .secure_storage import BLOCKER as SECURE_STORAGE_BLOCKER
+from .secure_storage import indicators as secure_storage_indicators
+
+__all__ = ['Inventory', 'discover']
 
 
 @dataclass

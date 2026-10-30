@@ -6,13 +6,16 @@ the strict-guard state folder, bound to the current user.
 """
 import json
 
-from . import brokered_dns
 from .. import layout
 from ..errors import SafetyError
+from ..model.ids import utc_now
 from ..model.status import Network, NextAction
 from ..safeio import atomic_bytes
-from ..windows.system import DPAPI
-from ..model.ids import utc_now
+from ..windows.dpapi import DPAPI
+from . import brokered_dns
+
+__all__ = ['DNS', 'FILE', 'STATUS', 'accept', 'admits', 'load', 'open_boundaries', 'record', 'report', 'required',
+           'revoke', 'withdraw']
 
 STATUS = 'blocked_incomplete_broker_isolation'
 FILE = 'l1-consent.dpapi'

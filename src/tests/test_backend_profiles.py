@@ -1,7 +1,9 @@
 import json
+
 import pytest
 from test_backend_attestation import config
-from test_reset import paths, FakeCrypto
+from test_reset import FakeCrypto, paths
+
 from claude_reset.backend import profiles as b
 from claude_reset.safeio import SafetyError
 

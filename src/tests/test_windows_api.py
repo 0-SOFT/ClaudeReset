@@ -1,7 +1,7 @@
 """windows/api: every DLL function the program calls has one declared prototype, and the DLL has that function."""
-from collections import Counter
 import importlib
 import pkgutil
+from collections import Counter
 
 import pytest
 
@@ -22,7 +22,7 @@ def tables():
 def test_every_function_is_declared_in_one_table():
     declared = Counter((dll, function) for _, table in tables() for dll, functions in table.items() for function in functions)
     assert [key for key, count in declared.items() if count > 1] == []
-    assert len(declared) > 80   # the tables were found
+    assert len(declared) > 60   # the tables were found
 
 
 def test_every_declared_function_exists_in_its_dll():

@@ -2,8 +2,8 @@ import types
 
 import pytest
 
-from claude_reset.network import gate_rules as guard
 from claude_reset import layout
+from claude_reset.network import gate_rules as guard
 from claude_reset.network.strict_wfp import LAYERS, Identity
 
 

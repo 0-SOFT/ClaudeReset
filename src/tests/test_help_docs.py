@@ -1,8 +1,8 @@
 import pytest
+from test_gui_shell import Widget, button, ui
 
-from claude_reset.ui import help_docs
 from claude_reset.safeio import SafetyError
-from test_gui_shell import ui, button, Widget
+from claude_reset.ui import help_docs
 
 
 def bundle(root):

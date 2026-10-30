@@ -1,23 +1,27 @@
 """Journaled execution with preflight, encrypted memory and conservative recovery."""
 from __future__ import annotations
-from contextlib import contextmanager
+
 import json
 import os
-from pathlib import Path
 import re
-from .core import MEMORY_LIMIT, snapshot_memory, validate_memory_bundle, restore_memory, reset_vscode_db
+from contextlib import contextmanager
+from pathlib import Path
+
+from .. import config, layout
+from ..errors import SafetyError, error_kind
+from ..model import clients, jsonc
 from ..model.ids import new_id
-from .planner import build_plan, action_fingerprint
-from ..model import jsonc
-from ..errors import SafetyError
-from ..safeio import guarded, remove_owned, atomic_json, atomic_bytes
-from ..windows.system import DPAPI, inspect_windows, inspect_runtime
-from .. import layout
-from .. import config
-from ..model import clients
-from ..model.status import Reset
 from ..model.reset import Plan, report_versions
+from ..model.status import Reset
+from ..safeio import atomic_bytes, atomic_json, guarded, remove_owned
+from ..windows.dpapi import DPAPI
+from ..windows.inventory import inspect_runtime, inspect_windows
 from .identifiers import baseline, compare
+from .memory import MEMORY_LIMIT, restore_memory, snapshot_memory, validate_memory_bundle
+from .planner import action_fingerprint, build_plan
+from .vscode_db import reset_vscode_db
+
+__all__ = ['Executor', 'archive_profiles', 'operation_lock', 'recover_memory', 'verify_run']
 
 
 @contextmanager
@@ -76,9 +80,14 @@ def archive_profiles(bundle):
     return bundle['profiles']
 
 
+def action_key(action):
+    """What makes two planned actions the same action: kind, target, root and component."""
+    return action.kind, action.target, action.root, action.component
+
+
 class Executor:
-    def __init__(self, paths, crypto=None, inspect=inspect_windows):
-        self.paths, self.crypto, self.inspect = paths, crypto or DPAPI(), inspect
+    def __init__(self, paths, crypto=DPAPI(), inspect=inspect_windows):
+        self.paths, self.crypto, self.inspect = paths, crypto, inspect
 
     def write_private(self, path, value):
         atomic_bytes(path, self.crypto.encrypt(json.dumps(value, ensure_ascii=False).encode('utf-8')), self.paths.state)
@@ -99,9 +108,8 @@ class Executor:
         current = build_plan(self.paths, plan.components, platform_state=self.inspect(), selection=plan.selection)
         if current.blockers:
             raise SafetyError('New blockers detected; nothing changed')
-        key = lambda a: (a.kind, a.target, a.root, a.component)
-        actual = [key(a) for a in current.actions if a.kind != 'chrome_fresh']
-        original = [key(a) for a in plan.actions if a.kind != 'chrome_fresh']
+        actual = [action_key(a) for a in current.actions if a.kind != 'chrome_fresh']
+        original = [action_key(a) for a in plan.actions if a.kind != 'chrome_fresh']
         if actual != original or current.versions != plan.versions:
             raise SafetyError('Inventory changed; review a new plan')
         if sum(a.kind == 'chrome_fresh' for a in plan.actions) != int('chrome' in plan.components):
@@ -129,9 +137,8 @@ class Executor:
         current = build_plan(self.paths, plan.components, platform_state=self.inspect(), selection=plan.selection)
         if current.blockers or current.versions != plan.versions:
             raise SafetyError('External configuration or client version changed during reset')
-        key = lambda a: (a.kind, a.target, a.root, a.component)
-        approved = {key(a) for a in plan.actions if a.kind != 'chrome_fresh'}
-        if any(key(a) not in approved for a in current.actions if a.kind != 'chrome_fresh'):
+        approved = {action_key(a) for a in plan.actions if a.kind != 'chrome_fresh'}
+        if any(action_key(a) not in approved for a in current.actions if a.kind != 'chrome_fresh'):
             raise SafetyError('A new reset target appeared; review a new plan')
         return current
 
@@ -164,7 +171,7 @@ class Executor:
                 self._fail(run, report, exc)
 
     def _fail(self, run, report, exc):
-        report.update(status=Reset.FAILED_OR_PARTIAL, error_type=type(exc).__name__, ready_for_new_account=False)
+        report.update(status=Reset.FAILED_OR_PARTIAL, error_type=error_kind(exc), ready_for_new_account=False)
         atomic_json(run / layout.RESULT_FILE, report, self.paths.state)
         raise SafetyError('Apply stopped. Inspect the redacted run report; encrypted memory archive is retained if created', code='apply_stopped') from None
 
@@ -266,13 +273,13 @@ class Executor:
                 self._fail(run, report, exc)
 
 
-def recover_memory(paths: layout.Paths, run_id: str, crypto=None):
+def recover_memory(paths: layout.Paths, run_id: str, crypto=DPAPI()):
     if not re.fullmatch(r'[a-f0-9]{32}', run_id):
         raise SafetyError('Invalid recovery run ID')
     source = guarded(layout.run_folder(paths, layout.RUNS, run_id) / layout.MEMORY_FILE, paths.state)
     if source.stat().st_size > MEMORY_LIMIT * 2:
         raise SafetyError('Archive too large')
-    bundle = json.loads((crypto or DPAPI()).decrypt(source.read_bytes()))
+    bundle = json.loads(crypto.decrypt(source.read_bytes()))
     profiles = archive_profiles(bundle)
     # Recovery exports into its OWN directory, never overwrites a live Claude profile.
     destination = paths.state / 'recovered-memory' / new_id()
@@ -286,7 +293,7 @@ def recover_memory(paths: layout.Paths, run_id: str, crypto=None):
     return destination
 
 
-def verify_run(paths, run_id, crypto=None):
+def verify_run(paths, run_id, crypto=DPAPI()):
     if not re.fullmatch(r'[a-f0-9]{32}', run_id):
         raise SafetyError('Invalid verification run ID')
     with operation_lock(paths):

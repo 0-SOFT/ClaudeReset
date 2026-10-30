@@ -1,20 +1,24 @@
 """Fixed-location cleanup inventory. Public results contain no user paths."""
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
-import stat
 
-from ..errors import SafetyError
-from ..safeio import guarded, tree_entries
-
-from ..safeio import fingerprint, remove_owned, atomic_json
-from .execution import Executor, operation_lock
-from .core import snapshot_memory, restore_memory, validate_memory_bundle
-from ..windows.system import inspect_windows, ps_json
 from .. import layout
+from ..errors import SafetyError
 from ..model import clients
 from ..model.confirmation import Confirmation
-from ..model.status import Location, Reset
 from ..model.ids import new_id
+from ..model.status import Location, Reset
+from ..safeio import atomic_json, fingerprint, guarded, remove_owned, tree_entries
+from ..windows.cleanup_actions import delete_credential as native_delete
+from ..windows.dpapi import DPAPI
+from ..windows.inventory import inspect_windows
+from ..windows.powershell import ps_json
+from .cowork import verify_cleanup_exports
+from .execution import Executor, operation_lock
+from .memory import restore_memory, snapshot_memory, validate_memory_bundle
+
+__all__ = ['MODES', 'WipeExecutor', 'WipePlan', 'audit', 'fixed_targets', 'inspect_cleanup', 'prepare_wipe', 'preview']
 
 
 def inspect_cleanup(*, windows=inspect_windows, query=ps_json):
@@ -81,14 +85,12 @@ def prepare_wipe(paths, mode='wipe', *, accept_unlisted=False, inspect=inspect_c
 
 
 class WipeExecutor:
-    def __init__(self, paths, *, crypto=None, inspect=inspect_cleanup, delete_credential=None, verify_exports=None,
-                 restore=restore_memory):
+    def __init__(self, paths, *, crypto=DPAPI(), inspect=inspect_cleanup, delete_credential=native_delete,
+                 verify_exports=verify_cleanup_exports, restore=restore_memory):
         """verify_exports checks the Cowork exports the plan relies on (cowork.verify_cleanup_exports) and
-        restore puts the kept memory back (core.restore_memory)."""
-        from ..windows.cleanup_actions import delete_credential as native_delete
-        from .cowork import verify_cleanup_exports
-        self.delete_credential = delete_credential or native_delete
-        self.verify_exports, self.restore = verify_exports or verify_cleanup_exports, restore
+        restore puts the kept memory back (memory.restore_memory)."""
+        self.delete_credential = delete_credential
+        self.verify_exports, self.restore = verify_exports, restore
         self.paths, self.inspect = paths, inspect
         self.storage = Executor(paths, crypto=crypto, inspect=inspect)
 
@@ -172,7 +174,7 @@ class Target:
 
 
 def fixed_targets(paths):
-    """The location list in wipe_claude.ps1, never a caller-supplied delete list."""
+    """The location list in maintainer/wipe_claude.ps1, never a caller-supplied delete list."""
     paths.validate()
     targets = [
         Target('Desktop MSIX', layout.desktop_package(paths), paths.local, 'contents'),

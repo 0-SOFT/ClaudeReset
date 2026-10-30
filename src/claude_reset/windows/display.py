@@ -2,11 +2,11 @@
 the program again. Each call affects this process or its own windows only."""
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
 import ctypes
-from pathlib import Path
 import subprocess
 import winreg
+from collections.abc import Callable, Sequence
+from pathlib import Path
 
 __all__ = ['add_private_font', 'apps_use_dark_theme', 'set_dark_title_bar', 'set_dpi_awareness', 'start_program']
 
@@ -33,17 +33,18 @@ def apps_use_dark_theme() -> bool:
         return winreg.QueryValueEx(key, 'AppsUseLightTheme')[0] == 0
 
 
-def set_dark_title_bar(window_id: int, on: bool, *, api: Callable | None = None, parent: Callable | None = None,
-                       redraw: Callable | bool | None = None) -> bool:
-    """The title bar of this program's window in dark or light colours (Windows 10 20H1 and later)."""
-    api = api or ctypes.windll.dwmapi.DwmSetWindowAttribute
-    parent = parent or ctypes.windll.user32.GetParent
+def set_dark_title_bar(window_id: int, on: bool, *, api: Callable = ctypes.windll.dwmapi.DwmSetWindowAttribute,
+                       parent: Callable = ctypes.windll.user32.GetParent,
+                       redraw: Callable | bool = ctypes.windll.user32.SetWindowPos) -> bool:
+    """The title bar of this program's window in dark or light colours (Windows 10 20H1 and later).
+
+    redraw=False leaves the frame to repaint on its own."""
     handle = parent(window_id) or window_id   # Tk's frame lives inside the top-level window
     value = ctypes.c_int(1 if on else 0)
     done = api(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(value), ctypes.sizeof(value)) == 0
     if done and redraw is not False:
         # The frame repaints only when told.
-        (redraw or ctypes.windll.user32.SetWindowPos)(handle, 0, 0, 0, 0, 0, REPAINT_FRAME)
+        redraw(handle, 0, 0, 0, 0, 0, REPAINT_FRAME)
     return done
 
 

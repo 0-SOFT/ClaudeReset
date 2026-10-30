@@ -1,10 +1,13 @@
-from copy import deepcopy
 import ctypes as C
+from copy import deepcopy
+
 import pytest
-from claude_reset.windows import wfp_security as s, wfp
+from wfp_fakes import FakeSession, fake
+
 from claude_reset.network import strict_wfp as strict
 from claude_reset.safeio import SafetyError
-from wfp_fakes import FakeSession, fake
+from claude_reset.windows import wfp
+from claude_reset.windows import wfp_security as s
 from claude_reset.windows.wfp_session import SUBLAYER
 
 
@@ -99,23 +102,15 @@ def test_strict_filter_content_match_still_requires_security_readback(monkeypatc
     assert freed==[True]
 
 
-@pytest.mark.parametrize('present',[False,True])
-def test_reservation_sublayer_readback_never_adds_missing_object(monkeypatch,present):
-    from claude_reset.network import gateway_reservation as g
-    engine=fake(g.Reservation)(17)
-    data=(C.c_ubyte*len(g.MARK)).from_buffer_copy(g.MARK)
-    wanted=SUBLAYER(key=g.SUB,flags=1,data=wfp.BLOB(len(g.MARK),data),weight=61100)
-    events=[]
-    def call(name,*args,**kwargs):
-        events.append(name)
-        assert name=='FwpmSubLayerGetByKey0'
-        if not present:return 0x80320007
-        C.cast(args[-1],C.POINTER(C.POINTER(SUBLAYER)))[0]=C.pointer(wanted)
-        return 0
-    engine.native=call;engine.free=lambda pointer:events.append('free')
-    def verify(instance,kind,key):
-        assert instance is engine and kind=='sublayer' and key.value()==g.SUB.value()
-        events.append('security');return True
-    monkeypatch.setattr(s,'verify',verify)
-    assert engine.existing_sublayer() is present
-    assert events==(['FwpmSubLayerGetByKey0','free','security'] if present else ['FwpmSubLayerGetByKey0'])
+def test_actual_windows_descriptor_is_parsed_without_changing_anything():
+    reader = s.Reader()
+    pointer = C.c_void_p()
+    assert reader.api.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        'O:SYG:SYD:(A;;0xf01ff;;;SY)(A;;0xf01ff;;;BA)(A;;0x2008d;;;AU)', 1, C.byref(pointer), None)
+    try:
+        value = reader.descriptor(pointer)
+        assert value['owner'] == 'S-1-5-18' and value['dacl_present'] and not value['dacl_null']
+        assert [rule['sid'] for rule in value['rules']] == ['S-1-5-18', 'S-1-5-32-544', 'S-1-5-11']
+        assert all(s.plain_allow(rule) for rule in value['rules'])
+    finally:
+        reader.kernel.LocalFree(pointer)

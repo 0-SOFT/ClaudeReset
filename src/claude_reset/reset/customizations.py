@@ -1,19 +1,23 @@
 """Explicit disposition of extra Code entries: source export or reviewed removal."""
 from __future__ import annotations
+
 import base64
 import hashlib
 import re
+
+from .. import layout
+from ..errors import SafetyError, error_kind
+from ..model import clients
+from ..model.ids import new_id
+from ..model.status import Export, Reset
+from ..safeio import atomic_bytes, atomic_json, fingerprint, guarded, remove_owned, walk_files
+from ..windows.inventory import inspect_runtime
 from .catalog import CODE_ENTRIES
 from .cowork import SECRET
 from .desktop_keys import private_read, private_write
 from .execution import operation_lock
-from ..errors import SafetyError
-from ..safeio import guarded, fingerprint, walk_files, remove_owned, atomic_json, atomic_bytes
-from ..windows.system import inspect_runtime
-from .. import layout
-from ..model import clients
-from ..model.status import Export, Reset
-from ..model.ids import new_id
+
+__all__ = ['apply_plan', 'create_plan', 'extra_entries', 'no_code_owners', 'recover']
 
 
 def extra_entries(profile):
@@ -108,7 +112,7 @@ def apply_plan(paths, run_id, *, server_step_complete=False):
                 raise SafetyError('Customizations reappeared')
             report['status'] = Reset.COMPLETED
         except Exception as exc:
-            report.update(status=Reset.FAILED_OR_PARTIAL, error_type=type(exc).__name__)
+            report.update(status=Reset.FAILED_OR_PARTIAL, error_type=error_kind(exc))
             atomic_json(run / layout.RESULT_FILE, report, paths.state)
             raise SafetyError('Customization removal stopped; source archive is retained') from None
         atomic_json(run / layout.RESULT_FILE, report, paths.state)

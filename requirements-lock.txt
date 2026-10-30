@@ -10,8 +10,9 @@ packaging==26.3
 pefile==2024.8.26
 pluggy==1.7.0
 Pygments==2.21.0
-pyinstaller==6.22.3
 pyinstaller-hooks-contrib==2026.9
+pyinstaller==6.22.3
 pytest==9.1.1
 pywin32-ctypes==0.2.3
+ruff==0.17.1
 setuptools==84.2.1

@@ -1,8 +1,10 @@
 """Thin GUI adapter for L1. Public results contain only fixed vocabulary."""
 from types import MappingProxyType
 
-from ..services import protection
 from ..model.status import Check, Protection
+from ..services import protection
+
+__all__ = ['LIMITS', 'RESULTS', 'limits', 'perform', 'result', 'status']
 
 
 LIMITS = MappingProxyType({
@@ -47,15 +49,15 @@ RESULTS = MappingProxyType({
 })
 
 
-def limits(paths, *, l1=None):
+def limits(paths, *, l1=protection.L1()):
     names = protection.open_boundaries(paths, l1=l1)
     return {'known': all(n in LIMITS for n in names),
             'lines': [LIMITS.get(n, 'Новая неизвестная граница: установка из окна недоступна.') for n in names]}
 
 
-def status(paths, *, l1=None):
+def status(paths, *, l1=protection.L1()):
     found = protection.details(paths, l1=l1)
-    saved, checks = found['last_report'], found['parts']
+    saved, checks = found.last_report, found.parts
     def part(key):
         return {Check.OK: 'обнаружено', Check.MISSING: 'не обнаружено', Check.INFO: 'не требуется'}.get(checks.get(key), 'не подтверждено')
     rows = [f'Контроллер (задача): {part("controller_task")}',
@@ -86,26 +88,27 @@ def status(paths, *, l1=None):
         'backend_config_failed': 'проверка конфигурации backend не пройдена',
         'exception': 'ошибка контроллера',
     }.get(saved.get('stop_reason'), 'не установлена'))
-    if found['can_install'] is not True:
+    if found.can_install is not True:
         rows.append('Установка: предусловия не подтверждены. Требуется диагностика.')
     return {'text': '\n'.join(rows)}
 
 
 def result(report):
-    text = RESULTS.get(report.get('status'), 'Операция не завершена полностью. Обновите состояние; проверьте журнал операции.')
-    if report.get('extension_protection') == 'excluded':
+    """The words for how a protection action ended (services.protection.ActionResult)."""
+    text = RESULTS.get(report.status, 'Операция не завершена полностью. Обновите состояние; проверьте журнал операции.')
+    if report.extension_protection == 'excluded':
         text += '\nУстановленные бинарники расширения исключены. Фильтры удалённых версий требуют отдельной проверки.'
-    if report.get('profile_saved'):
+    if report.profile_saved:
         text += '\nНовый профиль сохранён DPAPI. Это само по себе не подтверждает работу реле.'
-    if report.get('retry_blocked'):
+    if report.retry_blocked:
         text += '\nПовтор запрещён до сверки незавершённой операции.'
-    seconds = report.get('seconds_without_relay')
+    seconds = report.seconds_without_relay
     if type(seconds) in (int, float) and 0 <= seconds < 86400:
         text += f'\nВремя без реле: {seconds} с.'
     return {'text': text}
 
 
-def perform(paths, action, *, confirmed=False, protect_extension=None, proxy_draft=None, l1=None):
+def perform(paths, action, *, confirmed=False, protect_extension=None, proxy_draft=None, l1=protection.L1()):
     """Run a protection action the person confirmed in the window, and word its result."""
     if not confirmed:
         return {'text': 'Действие отменено. Изменения не выполнялись.'}

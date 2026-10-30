@@ -1,12 +1,11 @@
 """Start the elevated child that carries out one persisted claim: the operation's own mode of this program."""
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 from types import MappingProxyType
 
-from .. import config
-from .. import layout
+from .. import config, layout
 from ..errors import SafetyError
 from ..windows.runas import start_elevated
 
@@ -17,8 +16,7 @@ FLAGS = MappingProxyType({'start': '--strict-guard-serve', 'remove': '--strict-g
                           'autostart': '--strict-guard-autostart-serve',
                           'autostart-off': '--strict-guard-autostart-off-serve',
                           'package-register': '--l1-package-register-serve',
-                          'package-remove': '--l1-package-remove-serve',
-                          'filters': '--network-guard-filters'})
+                          'package-remove': '--l1-package-remove-serve'})
 
 
 def dispatch_request(request, *, executable=None, exclude_extension=False):

@@ -2,9 +2,9 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from dialog_fakes import Dialogs
 
 from claude_reset.privacy import observations as p
-from dialog_fakes import Dialogs
 
 
 def journal(tmp_path, hosts):
@@ -60,13 +60,13 @@ def test_partial_keeps_valid_counts(tmp_path):
 
 
 def test_button_and_cancel(tmp_path, monkeypatch):
-    from claude_reset.ui.expert_window import App
+    from claude_reset.ui.expert.diagnostics import DiagnosticsTab
     path = journal(tmp_path, ['claude.ai'])
     shown = []
     app = SimpleNamespace(run=lambda job, done: done(job()), show_json=shown.append,
                           dialogs=Dialogs(askopenfilename=lambda **kw: str(path)))
-    App.show_privacy_observations(app)
+    DiagnosticsTab(app).show_privacy_observations()
     assert shown[0]['records'] == 1
     app.dialogs.answers['askopenfilename'] = ''
-    App.show_privacy_observations(app)
+    DiagnosticsTab(app).show_privacy_observations()
     assert len(shown) == 1

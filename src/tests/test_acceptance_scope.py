@@ -1,11 +1,14 @@
 """Manual acceptance stays bound to its private run and a closed vocabulary."""
 import json
+
 import pytest
 from dialog_fakes import Dialogs
-from test_reset import paths,FakeCrypto,apply
 from test_features import plan
+from test_reset import FakeCrypto, apply, paths
+
 from claude_reset.reset import verification as v
 from claude_reset.safeio import SafetyError
+
 
 @pytest.mark.parametrize('components',[None,[],['SENSITIVE_REPORT_FIELD'],['code','code'],('code',),{'token':'value'},[True]])
 def test_template_rejects_unreviewed_scope(components):
@@ -54,18 +57,19 @@ def test_private_scope_failure_does_not_write_evidence(paths,fault):
 
 def test_gui_template_ignores_forged_public_scope(paths,monkeypatch):
     from types import SimpleNamespace
-    from claude_reset.ui.expert_window import App
+
+    from claude_reset.ui.expert.settings import SettingsTab
     p=plan(paths,('chrome',));apply(paths,p)
     file=paths.state/'runs'/p.id/'result.json';file.write_text(json.dumps({'components':['SENSITIVE_REPORT_FIELD']}))
     output=paths.home/'acceptance.json'
     dialogs=Dialogs(asksaveasfilename=lambda **kw:str(output))
-    App.acceptance_template(SimpleNamespace(paths=paths,last_run=p.id,safe=lambda action:action(),dialogs=dialogs))
+    SettingsTab(SimpleNamespace(paths=paths,last_run=p.id,safe=lambda action:action(),dialogs=dialogs)).acceptance_template()
     assert json.loads(output.read_text())['components']==['chrome']
 
 
 def test_cli_template_uses_private_scope(paths,monkeypatch,capsys):
-    from claude_reset.ui import expert_window as app
     from claude_reset import cli
+    from claude_reset.ui import expert_window as app
     p=plan(paths,('chrome',));apply(paths,p)
     (paths.state/'runs'/p.id/'result.json').unlink()
     monkeypatch.setattr(app.Paths,'current',classmethod(lambda cls,*args:paths))

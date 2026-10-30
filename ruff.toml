@@ -1,0 +1,20 @@
+# Lint rules of ClaudeReset: imports in order and used, no undefined or shadowed names, no syntax-level slips.
+# Long lines are kept in check by tools/architecture_metrics.py (long_lines), not here.
+line-length = 120
+target-version = "py312"
+extend-exclude = ["third_party"]
+
+[lint]
+select = ["E7", "E9", "F", "I"]
+
+[lint.isort]
+known-first-party = ["claude_reset"]
+
+[lint.per-file-ignores]
+# Tests import their fixtures from other test modules (pytest resolves them by name) and keep short checks on one line.
+"src/tests/*" = ["F401", "F811", "E701", "E702", "E731"]
+"maintainer/tests/*" = ["F401", "F811", "E701", "E702", "E731"]
+# The maintainer's scripts and the backend worker template (its text is rendered onto installed computers) keep
+# their dense one-line checks.
+"maintainer/*" = ["E701", "E702", "E731"]
+"packaging/backend/proxy_worker.py" = ["E701", "E702"]

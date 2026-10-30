@@ -15,16 +15,18 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from ..errors import SafetyError
-from ..safeio import atomic_bytes, guarded
-from ..windows.system import DPAPI
+from .. import config, layout
 from ..elevation.claims import serialized_effect
-from .. import config
-from .. import layout
-from ..model.status import Measurement
-from ..model.records import ConnectionProfile, exact
-from ..model.notes import Note
+from ..errors import SafetyError, error_kind
 from ..model.ids import utc_now
+from ..model.notes import Note
+from ..model.records import ConnectionProfile, exact
+from ..model.status import Measurement
+from ..safeio import atomic_bytes, guarded
+from ..windows.dpapi import DPAPI
+
+__all__ = ['check', 'connect', 'endpoint', 'import_profile', 'load', 'measure', 'read_exact', 'remove', 'save',
+           'validate']
 
 MAX_PROFILE = 16384
 
@@ -78,9 +80,9 @@ def validate(profile):
 
 
 @serialized_effect('connection_save', succeeded=lambda row: row.get('status') == Measurement.CONNECTION_PROFILE_SAVED)
-def save(paths, profile, *, crypto=None):
+def save(paths, profile, *, crypto=DPAPI()):
     profile = validate(profile)
-    encrypted = (crypto or DPAPI()).encrypt(json.dumps(profile).encode('utf-8'))
+    encrypted = crypto.encrypt(json.dumps(profile).encode('utf-8'))
     atomic_bytes(paths.state / layout.CONNECTION_PROFILE, encrypted, paths.state)
     return {'status': Measurement.CONNECTION_PROFILE_SAVED, 'passed': True, 'encrypted': True,
             'network_settings_changed': False, 'clients_reconfigured': False,
@@ -96,14 +98,14 @@ def remove(paths):
     return not path.exists()
 
 
-def load(paths, *, crypto=None):
+def load(paths, *, crypto=DPAPI()):
     path = guarded(paths.state / layout.CONNECTION_PROFILE, paths.state)
     if not path.exists():
         return None
     if path.stat().st_size > MAX_PROFILE:
         raise SafetyError('Connection profile size limit exceeded')
     try:
-        return validate(json.loads((crypto or DPAPI()).decrypt(path.read_bytes())))
+        return validate(json.loads(crypto.decrypt(path.read_bytes())))
     except (UnicodeError, ValueError):
         raise SafetyError('Connection profile is invalid') from None
 
@@ -194,7 +196,7 @@ def measure(proxy):
                 timer.daemon = True
                 timer.start()
                 stream.sendall((f'GET /cdn-cgi/trace HTTP/1.1\r\nHost: {config.CLAUDE_HOST}\r\n'
-                                'User-Agent: ClaudeReset connection-check\r\nConnection: close\r\n\r\n').encode('ascii'))
+                                'User-Agent: ' + config.USER_AGENT + ' connection-check\r\nConnection: close\r\n\r\n').encode('ascii'))
                 response = http.client.HTTPResponse(stream)
                 response.begin()
                 if response.status != 200:
@@ -214,15 +216,14 @@ def measure(proxy):
                     raise ValueError()
                 return {'status': Measurement.MEASURED, 'exit_ip': str(address), 'address_family': address.version}
     except (OSError, ValueError, KeyError, http.client.HTTPException) as exc:
-        return {'status': Measurement.MEASUREMENT_FAILED, 'error_type': type(exc).__name__}
+        return {'status': Measurement.MEASUREMENT_FAILED, 'error_type': error_kind(exc)}
     finally:
         if timer is not None:
             timer.cancel()
 
 
-def check(profile, *, include_router=False, measure_fn=None):
+def check(profile, *, include_router=False, measure_fn=measure):
     profile = validate(profile)
-    measure_fn = measure_fn or measure
     rows = {}
     selected = None
     # Explicit opt-in: an unknown incoming path is never probed by default.

@@ -4,14 +4,18 @@ The sink answers only fresh random .invalid names created by this invocation.
 Failure/busy port is not evidence of containment. This probe cannot certify all IPC.
 """
 from __future__ import annotations
+
 import socket
 import threading
-from ..backend import location as backend_location
-from ..windows.system import ps_json
+
 from .. import config
-from ..windows import packages
-from ..model.status import Network
+from ..backend import location as backend_location
 from ..model.ids import new_id
+from ..model.status import Network
+from ..windows import packages
+from ..windows.powershell import ps_json
+
+__all__ = ['coverage_gate']
 
 
 def probe():

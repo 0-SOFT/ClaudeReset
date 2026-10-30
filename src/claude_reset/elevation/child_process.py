@@ -1,12 +1,14 @@
 """Recorded admitted process witnesses; never a complete process inventory."""
-from dataclasses import asdict
 import os
+from dataclasses import asdict
 from pathlib import Path
 
+from .. import layout
 from ..network import controller_process
 from ..safeio import guarded
-from .. import layout
 from . import claims
+
+__all__ = ['record', 'witness_path']
 
 
 def witness_path(request):

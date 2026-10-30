@@ -1,13 +1,17 @@
 """Opt-in loopback measurement of the chosen browser, not of Claude traffic."""
 from __future__ import annotations
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
 import json
 import re
 import secrets
 import threading
-from ..errors import SafetyError
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
 from .. import config
+from ..errors import SafetyError
 from ..model.records import BrowserMeasurement, exact
+
+__all__ = ['browser_measurement', 'validate_measurement']
 
 
 def validate_measurement(data, accept_language):

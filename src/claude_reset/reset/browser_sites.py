@@ -1,18 +1,20 @@
 """Narrow offline cleanup; shared browser stores are explicitly unverified."""
+import os
 import re
 import sqlite3
-import os
 from pathlib import Path
 from types import MappingProxyType
 
-from ..errors import SafetyError
+from ..errors import BrowsersOpenError, SafetyError
+from ..model.confirmation import Confirmation
+from ..model.notes import Note
+from ..model.status import Reset
 from ..safeio import guarded, remove_owned, tree_entries
 from ..windows import process
-from ..windows.system import ps_json
-from ..errors import BrowsersOpenError
-from ..model.confirmation import Confirmation
-from ..model.status import Reset
-from ..model.notes import Note
+from ..windows.powershell import ps_json
+
+__all__ = ['ORIGIN_DIRS', 'ROOTS', 'external_scope_report', 'manual_cleanup_profiles', 'open_site_settings',
+           'site_data']
 
 ROOTS = MappingProxyType({'Chrome': 'Google/Chrome/User Data', 'Edge': 'Microsoft/Edge/User Data'})
 ORIGIN_DIRS = ('IndexedDB/https_claude.ai_0.indexeddb.leveldb',
@@ -26,22 +28,21 @@ def manual_cleanup_profiles(paths):
             for number, (browser, _) in enumerate(profiles(paths), 1)]
 
 
-def open_site_settings(paths, profile_number, *, launch=None, environ=None):
+def open_site_settings(paths, profile_number, *, launch=process.start_quietly, environ=os.environ):
     """Open a selected standard profile; deletion stays with the person."""
     selected = profiles(paths)
     if type(profile_number) is not int or not 1 <= profile_number <= len(selected):
         raise SafetyError('Choose an existing profile number from the new list', code='profile_number')
     browser, profile = selected[profile_number - 1]
-    env = os.environ if environ is None else environ
     relative = ('Google/Chrome/Application/chrome.exe' if browser == 'Chrome'
                 else 'Microsoft/Edge/Application/msedge.exe')
-    roots = [paths.local] + [Path(env[key]) for key in ('ProgramFiles', 'ProgramFiles(x86)') if env.get(key)]
+    roots = [paths.local] + [Path(environ[key]) for key in ('ProgramFiles', 'ProgramFiles(x86)') if environ.get(key)]
     executable = next((root / relative for root in roots if (root / relative).is_file()), None)
     if executable is None:
         raise SafetyError('The standard browser installation was not found; open the settings of the profile by hand', code='browser_not_found')
     try:
-        (launch or process.start_quietly)([str(executable), '--profile-directory=' + profile.name,
-                                           ('chrome' if browser == 'Chrome' else 'edge') + '://settings/'])
+        launch([str(executable), '--profile-directory=' + profile.name,
+                ('chrome' if browser == 'Chrome' else 'edge') + '://settings/'])
     except Exception:
         raise SafetyError('The browser settings did not open; do the manual step in the profile', code='browser_settings_failed') from None
     return {'status': Reset.MANUAL_ACTION_REQUIRED, 'browser': browser,

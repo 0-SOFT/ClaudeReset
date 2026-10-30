@@ -3,13 +3,15 @@ import threading
 from types import SimpleNamespace
 
 import pytest
-
-from claude_reset.ui import expert_window as app
-from claude_reset.ui.worker import Event, Worker
-from claude_reset.ui.text import gui_message
-from claude_reset.safeio import SafetyError
 from dialog_fakes import script
 from scripted import Strict
+
+from claude_reset.safeio import SafetyError
+from claude_reset.ui import expert_window as app
+from claude_reset.ui.expert.analysis import AnalysisTab
+from claude_reset.ui.expert.policy import PolicyTab
+from claude_reset.ui.text import gui_message
+from claude_reset.ui.worker import Event, Worker
 
 
 @pytest.fixture
@@ -24,6 +26,11 @@ def window():
     ui.root = SimpleNamespace(after=lambda *args: ui.scheduled.append(args))
     script(ui, showerror=lambda *args: ui.messages.append(args))
     return ui
+
+
+def tab_action(window, action):
+    """The window's action on the tab that owns it: apply is the analysis tab's, save_policy the policy tab's."""
+    return getattr({'apply': AnalysisTab, 'save_policy': PolicyTab}[action](window), action)
 
 
 def fail():
@@ -177,7 +184,7 @@ def test_confirmation_cannot_authorize_changed_plan(window, action, change, tmp_
         return True
 
     script(window, askyesno=confirm)
-    getattr(window, action)()
+    tab_action(window, action)()
     assert window.messages[-1][1] == gui_message('plan_changed')
     assert window.operation is None
     assert not (tmp_path / 'policy.dpapi').exists()
@@ -189,7 +196,7 @@ def test_policy_file_dialog_invalidates_plan_before_consent(window, tmp_path):
         window.invalidate()
         return str(tmp_path / 'policy.dpapi')
     script(window, asksaveasfilename=choose, askyesno=lambda *_: pytest.fail('stale confirmation'))
-    window.save_policy()
+    PolicyTab(window).save_policy()
     assert window.messages[-1][1] == gui_message('plan_changed')
 
 
@@ -205,7 +212,7 @@ def test_unchanged_confirmation_uses_private_snapshot(window, action, tmp_path):
     window.policy = Strict(save_policy=lambda _file, plan, **kw: received.append((plan, kw)))
     window.executor = lambda *_: SimpleNamespace(apply=lambda plan, **kw: received.append((plan, kw)))
     window.run = lambda work, _callback: work()
-    getattr(window, action)()
+    tab_action(window, action)()
     original.actions.append('later-change')
     assert received[0][0].actions == ['reviewed-target']
     assert received[0][0] is not original

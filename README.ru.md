@@ -42,10 +42,11 @@
 ```
 py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-lock.txt
+.venv\Scripts\python.exe -m ruff check src tools packaging
 cd src
 ..\.venv\Scripts\python.exe -m pytest -q
 ```
 
 Из исходников окно запускает `ClaudeReset.cmd`. Установщик и портативный архив собирает `.venv\Scripts\python.exe tools\build_bundle.py --out <пустая папка>`.
 
-Устройство: `src/claude_reset/shell.py` — окно; `reset_flow.py` и `proxy_flow.py` — логика двух шагов; `brand.py` — фирменный стиль; `app.py` — режим для специалистов со всеми инструментами.
+Устройство `src/claude_reset`: `ui/shell.py` и `ui/pages/` — окно; `services/reset.py`, `services/proxy.py` и `services/protection.py` — два шага и защита; `reset/` — поиск и стирание данных Claude; `network/` — проверка прокси и защита L1; `windows/` — все вызовы Windows; `ui/text/` — языки окна; `ui/expert_window.py` и `ui/expert/` — режим для специалистов; `cli.py` — командная строка. Руководство разработчика — слои, где лежит каждая функция, тесты и сборка — [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md); как предложить изменение — [CONTRIBUTING.md](CONTRIBUTING.md), как сообщить об уязвимости — [SECURITY.md](SECURITY.md).

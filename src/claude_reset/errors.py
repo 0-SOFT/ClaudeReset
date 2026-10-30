@@ -2,10 +2,14 @@
 
 The message is for people and logs. Code that needs to react to a kind of failure checks the class or its
 `code`, never the text: texts change and are translated.
+
+Recording an exception: a result that windows show or reports keep carries only `error_type` =
+error_kind(exc), the class name, never the message (it can hold paths). A private report of an operation may keep
+error_info(exc). A handler that turns an exception into a status records one of the two; it never drops both.
 """
 
 __all__ = ['BrowsersOpenError', 'LimitExceeded', 'PlatformError', 'SafetyError', 'SchemaError', 'UnsafePathError',
-           'WfpError', 'error_info']
+           'WfpError', 'error_info', 'error_kind']
 
 
 class SafetyError(RuntimeError):
@@ -55,6 +59,11 @@ class WfpError(PlatformError):
     code = 'wfp'
 
 
+def error_kind(exc: BaseException) -> str:
+    """What a public result says about an exception: its class name, no message."""
+    return type(exc).__name__
+
+
 def error_info(exc, limit=200):
     """The text a report keeps about an unexpected exception: its type and the start of its message."""
-    return type(exc).__name__ + ': ' + str(exc)[:limit]
+    return error_kind(exc) + ': ' + str(exc)[:limit]

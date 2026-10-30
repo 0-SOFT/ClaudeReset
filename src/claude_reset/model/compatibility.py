@@ -7,7 +7,7 @@ live installed-boundary attestation and never follows from reset support.
 
 from types import MappingProxyType
 
-__all__ = ['CLIENTS', 'DEPENDENCIES', 'LEGACY_REVIEW']
+__all__ = ['CLIENTS', 'REVIEWED_STANDALONE_CLI']
 CLIENTS = MappingProxyType({
     'code': MappingProxyType({
         'reset_versions': frozenset({'2.1.274', '2.1.274.0'}),
@@ -48,24 +48,6 @@ CLIENTS = MappingProxyType({
         'privacy_verified_versions': frozenset(),
     }),
 })
-DEPENDENCIES = MappingProxyType({
-    'sing-box': MappingProxyType({'windows_amd64_images': MappingProxyType({
-        '1.14.4': '8f30682ee198855440d2a7fe070d5d3653793b2d01bb8c85eea88f93bbe7c8b9',
-    })}),
-    'sandboxie': MappingProxyType({'source_tag':'v1.18.8', 'installed_hardening_accepted':False,
-                                   'source_integrity_manifests':('tools/prepare_sandboxie_hardening.py',
-                                                                 'tools/prepare_sandboxie_helper_hardening.py')}),
-    'ewdk': MappingProxyType({'kit':'26100.6584', 'visual_studio':'2022', 'build_verified':False}),
-})
 
-# Historical, hash-bound code review used by the legacy local guard. These
-# hashes are NOT a live network/launch/privacy acceptance claim.
-LEGACY_REVIEW = MappingProxyType({
-    'desktop': MappingProxyType({'version':'3.6556.2.0',
-                                 'exe':'3e25bd63028e315b3dd1f375e02e5958a6cb6567d885e6005a517d2394686afa',
-                                 'asar':CLIENTS['desktop']['native_reset_hashes']['3.6556.2.0'][0]}),
-    'launch': MappingProxyType({'chrome':'de999bce6a1c954df71a8f15bf751b336172f55ac1a0325bb0580cbc2121268c',
-                                'vscode':'325fb30ba28d17fa6ba4df58043727b2469aca9d641793a65e413721b2110ec6'}),
-    'standalone_code':'4e4c1746aff835bb05e5ed14cda72d21ee6fbda4147aa99b3135718614da117e',
-    'dedicated_extension':('2.1.309','5441781f2b6bbd07354b4a74560ee88c68c9bf05d6db3c7e24c452c91673dc53'),
-})
+# The standalone Claude CLI build whose network code was reviewed for the L1 gate (SHA-256).
+REVIEWED_STANDALONE_CLI = '4e4c1746aff835bb05e5ed14cda72d21ee6fbda4147aa99b3135718614da117e'

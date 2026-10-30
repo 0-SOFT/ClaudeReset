@@ -4,10 +4,12 @@ Results stay in a private slot until the UI acknowledges the terminal event.
 Cancellation is cooperative and may only take effect at declared checkpoints.
 Legacy functions run as one indivisible step; never interrupt an issued mutation.
 """
-from dataclasses import dataclass
-from enum import StrEnum
 import queue
 import threading
+from dataclasses import dataclass
+from enum import StrEnum
+
+__all__ = ['Event', 'FINISHED', 'Phase', 'Worker']
 
 
 class Phase(StrEnum):

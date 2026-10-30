@@ -2,10 +2,10 @@ import socket
 import threading
 
 import pytest
+from test_tunnel_transport import Backend
 
 from claude_reset.network import tunnel_transport as transport
 from claude_reset.network.connections import read_exact
-from test_tunnel_transport import Backend
 
 
 @pytest.mark.parametrize('host', ['sentry.io', 'o1158394.ingest.us.sentry.io', 'http-intake.logs.us5.datadoghq.com', 'datadoghq.com'])

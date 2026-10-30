@@ -2,7 +2,10 @@
 so a status is written to JSON unchanged and compares equal to its old string."""
 from enum import StrEnum
 
-__all__ = ['Backend', 'Check', 'Diagnosis', 'Elevation', 'Export', 'Identifier', 'Location', 'Measurement', 'Network', 'NextAction', 'Package', 'Protection', 'ProtectionLevel', 'ProtectionState', 'Proxy', 'Readiness', 'Reset', 'Step', 'Uninstall']
+__all__ = ['Backend', 'BlockerKind', 'Browsers', 'Check', 'Collected', 'DesktopKeys', 'Diagnosis', 'Elevation',
+           'Export', 'Fix', 'Identifier', 'Location', 'Measurement', 'Network', 'NextAction', 'Package', 'Progress',
+           'Protection', 'ProtectionLevel', 'ProtectionState', 'Proxy', 'ProxyKind', 'Readiness', 'Reset', 'Step',
+           'Uninstall']
 
 
 class Protection(StrEnum):
@@ -260,3 +263,59 @@ class Readiness(StrEnum):
     PARTIAL = 'partial'
     READY_TO_INSTALL = 'ready_to_install'
     UNKNOWN = 'unknown'
+
+
+class Fix(StrEnum):
+    """The one fix the main window suggests for the protection."""
+    ACCEPT_EXIT = 'accept_exit'
+    INSTALL = 'install'
+    REENTER = 'reenter'
+    RESTART = 'restart'
+    RESUME = 'resume'
+    RETRY = 'retry'
+
+
+class ProxyKind(StrEnum):
+    """The kind of proxy the protection goes through, as the window names it."""
+    HTTP = 'HTTP'
+    SOCKS5 = 'SOCKS5'
+    VLESS = 'VLESS'
+
+
+class Progress(StrEnum):
+    """One step of the wizard: done, still to do, waiting for the steps before it, or unreadable."""
+    DONE = 'done'
+    TODO = 'todo'
+    UNKNOWN = 'unknown'
+    WAITING = 'waiting'
+
+
+class Collected(StrEnum):
+    """How much a read-only diagnostics read collected: all of it, a part, or nothing it could trust."""
+    COMPLETE = 'complete'
+    PARTIAL = 'partial'
+    UNAVAILABLE = 'unavailable'
+
+
+class BlockerKind(StrEnum):
+    """Who resolves a reset blocker: the program itself, the person, or the person by a choice."""
+    ASK = 'ask'
+    AUTO = 'auto'
+    USER = 'user'
+
+
+class DesktopKeys(StrEnum):
+    """What the reset did with the device keys of Claude Desktop."""
+    FAILED = 'failed'
+    NOT_PRESENT = 'not_present'
+    NOT_SUPPORTED = 'not_supported'
+    NO_KEYS = 'no_keys'
+    RESET = 'reset'
+
+
+class Browsers(StrEnum):
+    """Signing out of claude.ai in the browsers after a reset."""
+    BROWSERS_OPEN = 'browsers_open'
+    CLEARED = 'cleared'
+    FAILED = 'failed'
+    NOT_REQUESTED = 'not_requested'

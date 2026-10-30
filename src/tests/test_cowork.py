@@ -1,6 +1,8 @@
 import json
+
 import pytest
-from test_reset import paths, write, FakeCrypto
+from test_reset import FakeCrypto, paths, write
+
 from claude_reset.reset import cowork as cw
 from claude_reset.reset import desktop_keys as dk
 from claude_reset.safeio import SafetyError

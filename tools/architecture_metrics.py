@@ -8,22 +8,26 @@ functions as a ratchet, so a metric can only improve between commits.
 """
 import argparse
 import ast
-from collections import Counter, defaultdict, deque
-from dataclasses import dataclass, field
 import io
 import itertools
 import json
-from pathlib import Path
 import re
 import sys
 import tokenize
+from collections import Counter, defaultdict, deque
+from dataclasses import dataclass, field
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = 'claude_reset'
 
 # Entry scripts of the application and its services; tools/ and packaging/ are seeds too.
-ENTRY_SCRIPTS = ('src/launcher.py', 'src/launcher_run.py', 'src/backend_runtime_main.py', 'src/installer_preflight_main.py')
-TOOL_GLOBS = ('tools/*.py', 'packaging/**/*.py')
+ENTRY_SCRIPTS = ('src/launcher.py', 'src/launcher_run.py')
+# Scripts that installed computers run besides the launchers: the VS Code wrapper setup, the recovery task
+# and the backend worker. Build and maintenance tools are not the program.
+PROGRAM_SCRIPTS = ('tools/vscode_claude_proxy.py', 'tools/l1_recovery_watch.py', 'packaging/backend/proxy_worker.py')
+# The program's own names: retyping one outside config and layout is a second source of truth.
+OWNED_NAME = re.compile(r'ClaudeReset|claude-reset')
 
 # Modules whose job is to hold user-facing text; Cyrillic and long literals there are expected.
 TEXT_MODULES = ('ui.text',)
@@ -225,9 +229,9 @@ def _script_imports(path):
 
 
 def unreachable(modules, root=ROOT):
-    """Package modules that no entry script, tool or packaging script can reach: only tests use them."""
+    """Package modules that neither the launchers nor the program scripts reach: the program never loads them."""
     seeds = set()
-    scripts = [root / s for s in ENTRY_SCRIPTS] + [p for g in TOOL_GLOBS for p in root.glob(g)]
+    scripts = [root / s for s in ENTRY_SCRIPTS + PROGRAM_SCRIPTS]
     for script in scripts:
         if script.is_file():
             for name in _script_imports(script):
@@ -306,10 +310,10 @@ def mutable_constants(modules):
     return sorted(found)
 
 
-def missing_all(modules, prefixes=('windows', 'model', 'services')):
+def missing_all(modules):
     result = []
     for module in modules.values():
-        if module.top in prefixes and not module.is_package:
+        if not module.is_package:
             names = {t.id for n in module.tree.body if isinstance(n, ast.Assign) for t in n.targets if isinstance(t, ast.Name)}
             if '__all__' not in names:
                 result.append(module.name)
@@ -333,7 +337,10 @@ def dll_loads(modules, dll='kernel32'):
 
 
 def _docstring_ids(tree):
-    ids = set()
+    """Ids of docstring constants, and of the names listed in __all__: neither is a literal of the code."""
+    listed = [n.value for n in tree.body
+              if isinstance(n, ast.Assign) and any(getattr(t, 'id', None) == '__all__' for t in n.targets)]
+    ids = {id(c) for value in listed for c in ast.walk(value)}
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
             first = node.body[0]
@@ -361,6 +368,35 @@ def config_literals(modules, threshold=3):
                     and len(node.value) >= 5 and not CYRILLIC.search(node.value) and CONFIG_LITERAL.search(node.value)):
                 holders[node.value].add(module.name)
     return {value: sorted(names) for value, names in sorted(holders.items()) if len(names) >= threshold}
+
+
+def owned_names(modules):
+    """The program's own names (tasks, packages, folders) as config and layout define them."""
+    names = set()
+    for module in (modules.get('config'), modules.get('layout')):
+        for node in module.tree.body if module else ():
+            if isinstance(node, ast.Assign):
+                for value in ast.walk(node.value):
+                    if (isinstance(value, ast.Constant) and isinstance(value.value, str) and len(value.value) >= 8
+                            and OWNED_NAME.search(value.value)):
+                        names.add(value.value)
+    return names
+
+
+def retyped_owned_names(modules, root=ROOT):
+    """Places outside config and layout that type one of those names again: the same string, or the name
+    inside a PowerShell script. The program scripts of tools/ count too."""
+    names = owned_names(modules)
+    sources = [(m.name, m.tree) for m in modules.values() if m.name not in ('config', 'layout') and not _is_text_module(m)]
+    sources += [(s, ast.parse((root / s).read_text('utf-8'))) for s in PROGRAM_SCRIPTS[:2] if (root / s).is_file()]
+    found = []
+    for name, tree in sources:
+        docs = _docstring_ids(tree)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs:
+                if node.value in names or (POWERSHELL.search(node.value) and any(n in node.value for n in names)):
+                    found.append((name, node.lineno))
+    return found
 
 
 def embedded_powershell(modules):
@@ -425,6 +461,22 @@ def functions(modules):
                                  length=node.end_lineno - node.lineno + 1, annotated=annotated,
                                  public=not node.name.startswith('_')))
     return rows
+
+
+# Size of a module and of a class (quality plan, stage 8): a window is a frame that composes its pages, not one
+# class that holds them all.
+MODULE_LINE_LIMIT = 800
+
+
+def class_methods(modules):
+    """(methods, module, class) for every class: the functions defined in its own body, largest first."""
+    rows = []
+    for module in modules.values():
+        for node in ast.walk(module.tree):
+            if isinstance(node, ast.ClassDef):
+                count = sum(isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef)) for x in node.body)
+                rows.append((count, module.name, node.name))
+    return sorted(rows, key=lambda row: (-row[0], row[1], row[2]))
 
 
 def near_clones(modules, threshold=0.55, minimum=80):
@@ -492,6 +544,67 @@ def type_definitions(modules):
     return counts
 
 
+# The document of a scenario result is a dict by design: its to_json() is not counted.
+DOCUMENT_METHODS = ('to_json',)
+MAPPING_NAMES = frozenset({'dict', 'Dict', 'Mapping', 'MutableMapping'})
+
+
+def _dict_value(node):
+    """A dict literal or comprehension, dict(...), or a tuple that holds one."""
+    if isinstance(node, (ast.Dict, ast.DictComp)):
+        return True
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'dict':
+        return True
+    return isinstance(node, ast.Tuple) and any(_dict_value(element) for element in node.elts)
+
+
+def _dict_annotation(node):
+    """dict or Mapping, bare, subscripted, in a union or in quotes, or a tuple annotation that holds one."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return _dict_annotation(ast.parse(node.value, mode='eval').body)
+    if isinstance(node, ast.BinOp):
+        return _dict_annotation(node.left) or _dict_annotation(node.right)
+    head = node.value if isinstance(node, ast.Subscript) else node
+    name = head.id if isinstance(head, ast.Name) else getattr(head, 'attr', None)
+    if name in MAPPING_NAMES:
+        return True
+    if name == 'tuple' and isinstance(node, ast.Subscript):
+        inner = node.slice.elts if isinstance(node.slice, ast.Tuple) else [node.slice]
+        return any(_dict_annotation(element) for element in inner)
+    return False
+
+
+def _own_returns(function):
+    """The return statements of a function, not those of the functions and classes defined inside it."""
+    stack = list(function.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Return):
+            yield node
+        elif not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+            stack.extend(ast.iter_child_nodes(node))
+
+
+def services_dict_results(modules):
+    """Public functions and methods of the scenarios (services/) that hand the windows a dict instead of a typed
+    result: annotated as a dict (or a tuple that holds one), or returning a dict literal."""
+    found = []
+    for module in modules.values():
+        if module.top != 'services':
+            continue
+        scopes = [('', module.tree.body)] + [(node.name + '.', node.body) for node in module.tree.body
+                                             if isinstance(node, ast.ClassDef) and not private(node.name)]
+        for prefix, body in scopes:
+            for node in body:
+                if (not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name.startswith('_')
+                        or node.name in DOCUMENT_METHODS):
+                    continue
+                if (node.returns is not None and _dict_annotation(node.returns)) or any(
+                        r.value is not None and _dict_value(r.value) for r in _own_returns(node)):
+                    found.append((module.name, prefix + node.name))
+    return sorted(found)
+
+
 def text_checks_on_exceptions(modules):
     """'...' in str(exc): an error recognized by its message."""
     found = []
@@ -519,15 +632,99 @@ def field_set_checks(modules):
 
 
 def broad_handlers(modules):
+    """Broad handlers that neither re-raise nor record the exception, and those of them on BaseException."""
     swallowed, base = [], []
     for module in modules.values():
         for node in ast.walk(module.tree):
             if isinstance(node, ast.ExceptHandler) and node.type is not None and ast.unparse(node.type) in ('Exception', 'BaseException'):
-                if not any(isinstance(x, ast.Raise) for x in ast.walk(node)):
+                # A handler that re-raises, or records what it caught (error_kind(exc), error_info(exc)), hides nothing.
+                kept = node.name and any(isinstance(x, ast.Name) and x.id == node.name for x in ast.walk(node))
+                if not kept and not any(isinstance(x, ast.Raise) for x in ast.walk(node)):
                     swallowed.append((module.name, node.lineno))
                     if ast.unparse(node.type) == 'BaseException':
                         base.append((module.name, node.lineno))
     return swallowed, base
+
+
+# --- test seams ------------------------------------------------------------------------------------
+
+# A parameter that keeps None as its default says why on its own line (docs/QUALITY-PLAN-2026-10-30.md, stage 7).
+NONE_REASON = '# None:'
+
+
+def _none_parameters(function):
+    """The parameters of a function whose default is None, by name."""
+    args = function.args
+    positional = args.posonlyargs + args.args
+    pairs = list(zip(positional[len(positional) - len(args.defaults):], args.defaults))
+    pairs += [(arg, default) for arg, default in zip(args.kwonlyargs, args.kw_defaults) if default is not None]
+    return {arg.arg: arg for arg, default in pairs if isinstance(default, ast.Constant) and default.value is None}
+
+
+def _none_check(test):
+    """The parameter name and the operator of a test `name is None` or `name is not None`."""
+    if (isinstance(test, ast.Compare) and isinstance(test.left, ast.Name) and len(test.ops) == 1
+            and isinstance(test.ops[0], (ast.Is, ast.IsNot)) and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value is None):
+        return test.left.id, test.ops[0]
+    return None, None
+
+
+def _replaced_when_none(node):
+    """The name a node replaces when it is None: `name or x`, `x if name is None else name` (or the `is not`
+    form) and `if name is None: name = x`."""
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or) and isinstance(node.values[0], ast.Name):
+        return node.values[0].id
+    if isinstance(node, (ast.If, ast.IfExp)):
+        name, operator = _none_check(node.test)
+        if name is None:
+            return None
+        if isinstance(node, ast.IfExp):
+            kept = node.orelse if isinstance(operator, ast.Is) else node.body
+            return name if isinstance(kept, ast.Name) and kept.id == name else None
+        assigned = any(isinstance(statement, ast.Assign)
+                       and any(getattr(target, 'id', None) == name for target in statement.targets)
+                       for statement in node.body)
+        return name if isinstance(operator, ast.Is) and assigned else None
+    return None
+
+
+def none_default_collaborators(modules):
+    """Public functions and methods with a parameter that defaults to None and is replaced inside by the real
+    thing: (module, function, line, parameters, whether every such parameter says why on its line)."""
+    found = []
+    for module in modules.values():
+        lines = module.source.splitlines()
+        for node in ast.walk(module.tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or private(node.name):
+                continue
+            parameters = _none_parameters(node)
+            replaced = sorted({name for inner in ast.walk(node) for name in [_replaced_when_none(inner)]
+                               if name in parameters})
+            if replaced:
+                explained = all(NONE_REASON in lines[parameters[name].lineno - 1] for name in replaced)
+                found.append((module.name, node.name, node.lineno, replaced, explained))
+    return sorted(found)
+
+
+def module_class_attributes(modules):
+    """Class attributes bound to a whole module (`cleanup = cleanup`): a collaborator a test can only replace on
+    the class. (module, class, attribute)."""
+    found = []
+    for module in modules.values():
+        imported = set(module.aliases)
+        for node in ast.walk(module.tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.asname or alias.name.split('.')[0] for alias in node.names)
+        for node in ast.walk(module.tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for statement in node.body:
+                value = statement.value if isinstance(statement, (ast.Assign, ast.AnnAssign)) else None
+                if isinstance(value, ast.Name) and value.id in imported:
+                    targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+                    found.extend((module.name, node.name, ast.unparse(target)) for target in targets)
+    return sorted(found)
 
 
 LINE_LIMIT = 120
@@ -642,11 +839,17 @@ def measure(root=ROOT, *, clones=True, details=False):
     foreign = foreign_private_attributes(modules)
     dead = unreachable(modules, root)
     literals = config_literals(modules)
+    retyped = retyped_owned_names(modules, root)
     shells = embedded_powershell(modules)
     cyr = cyrillic_outside_ui(modules)
     statuses = status_literals(modules)
     types = type_definitions(modules)
+    scenario_dicts = services_dict_results(modules)
     swallowed, base = broad_handlers(modules)
+    none_defaults = none_default_collaborators(modules)
+    class_modules = module_class_attributes(modules)
+    classes = class_methods(modules)
+    large_modules = sorted((m.lines, m.name) for m in modules.values() if m.lines > MODULE_LINE_LIMIT)
     setattr_calls, package_patches, test_private = test_coupling(root)
     statements = sum(1 for m in modules.values() for n in ast.walk(m.tree) if isinstance(n, ast.stmt))
     public = [f for f in funcs if f['public']]
@@ -675,15 +878,20 @@ def measure(root=ROOT, *, clones=True, details=False):
         'argtypes_declarations': argtypes_declarations(modules),
         'kernel32_loaders': len(dll_loads(modules)),
         'config_literals': len(literals),
+        'owned_names_retyped': len(retyped),
         'embedded_powershell': len(shells),
         'embedded_powershell_lines': sum(s[2] for s in shells),
         'complexity_over_20': sum(1 for f in funcs if f['complexity'] > 20),
         'complexity_over_40': sum(1 for f in funcs if f['complexity'] > 40),
         'functions_over_100_lines': sum(1 for f in funcs if f['length'] > 100),
+        # Stage 8 of the quality plan: windows are frames composing their pages and tabs.
+        'modules_over_800_lines': len(large_modules),
+        'largest_class_methods': classes[0][0] if classes else 0,
         'status_literals': len(statuses),
         'enums': types['Enum'],
         'typed_dicts': types['TypedDict'],
         'dataclasses': types['dataclass'],
+        'services_dict_results': len(scenario_dicts),
         'annotated_public_functions_pct': round(100 * sum(f['annotated'] for f in public) / max(len(public), 1)),
         'annotated_core_functions_pct': round(100 * sum(f['annotated'] for f in core) / max(len(core), 1)),
         'cyrillic_outside_ui': len(cyr),
@@ -697,6 +905,9 @@ def measure(root=ROOT, *, clones=True, details=False):
         'style_in_rewritten_modules': sum(len(style_problems(modules[n])) for n in STYLE_CLEAN if n in modules),
         'test_only_modules': len(dead),
         'test_only_lines': sum(modules[n].lines for n in dead),
+        # Test seams (quality plan, stage 7): a collaborator's default is the real thing, bound in the signature.
+        'none_default_collaborators': len(none_defaults),
+        'module_class_attributes': len(class_modules),
         'monkeypatch_setattr': setattr_calls,
         'monkeypatch_package': package_patches,
         'test_private_access': test_private,
@@ -710,10 +921,13 @@ def measure(root=ROOT, *, clones=True, details=False):
             'private_imports': priv, 'foreign_private_attributes': foreign, 'modules_without_all': missing_all(modules),
             'mutable_constants': mutable_constants(modules),
             'ctypes_modules': os_library_users(modules, 'ctypes'), 'test_only_modules': dead,
-            'config_literals': literals, 'embedded_powershell': shells, 'status_literals': dict(statuses.most_common()),
+            'config_literals': literals, 'owned_names_retyped': retyped, 'embedded_powershell': shells, 'status_literals': dict(statuses.most_common()),
             'complex_functions': sorted((f for f in funcs if f['complexity'] > 20), key=lambda f: -f['complexity']),
             'cyrillic_outside_ui': sorted(Counter(m for m, _ in cyr).items()),
             'exception_text_checks': text_checks_on_exceptions(modules), 'base_exception_swallowed': base,
+            'services_dict_results': scenario_dicts, 'none_default_collaborators': none_defaults,
+            'module_class_attributes': class_modules,
+            'modules_over_800_lines': large_modules, 'largest_classes': classes[:10],
             'style_in_rewritten_modules': {n: style_problems(modules[n]) for n in STYLE_CLEAN
                                            if n in modules and style_problems(modules[n])},
         }

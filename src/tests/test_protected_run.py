@@ -168,6 +168,7 @@ def test_wrapper_refuses_an_unreviewed_binary(home, tmp_path, monkeypatch):
 def test_an_adopted_child_ends_with_its_job():
     import ctypes
     import sys
+
     from claude_reset.windows.job import KillOnClose
     job = KillOnClose()
     assert job.handle

@@ -1,12 +1,14 @@
 import json
+
 import pytest
-from test_reset import paths,write,platform
-from claude_reset.reset.planner import build_plan
+from test_reset import paths, platform, write
+
 from claude_reset.model.reset import Selection
-from claude_reset.reset.catalog import AUTH_VARS
 from claude_reset.privacy.inventory import flag_states, otel_configuration, vscode_settings
+from claude_reset.reset.catalog import AUTH_VARS
+from claude_reset.reset.planner import build_plan
+from claude_reset.safeio import SafetyError, fingerprint
 from claude_reset.windows.environment import folded
-from claude_reset.safeio import SafetyError,fingerprint
 
 
 @pytest.mark.parametrize('filename',['settings.json','settings.local.json'])

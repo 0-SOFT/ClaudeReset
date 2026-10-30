@@ -1,15 +1,17 @@
 """Current-user CNG operations. Never accesses PCPKSP files or machine keys."""
 from __future__ import annotations
+
 import ctypes as C
-from contextlib import contextmanager
-from enum import StrEnum
 import hashlib
 import os
 import re
 import uuid
-from .api import Library
-from ..errors import SafetyError
 from collections.abc import Iterator
+from contextlib import contextmanager
+from enum import StrEnum
+
+from ..errors import SafetyError
+from .api import Library
 
 __all__ = ['KEY_PATTERN', 'Provider', 'SelfTest', 'package_identity', 'selftest']
 

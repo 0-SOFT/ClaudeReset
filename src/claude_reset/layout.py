@@ -6,16 +6,27 @@ selection holds a path only, never service instructions or credentials. Discover
 metadata and never decrypts or migrates old archives.
 """
 from __future__ import annotations
-from dataclasses import dataclass
+
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import config
-from .model.jsonc import strict_loads
 from .errors import SafetyError
+from .model.jsonc import strict_loads
+from .model.records import StateSelection, exact
 from .safeio import atomic_json, guarded, local_volume
 from .windows.folders import physical_local_appdata
-from .model.records import StateSelection, exact
+
+__all__ = ['BACKEND_ENGINE_CONFIG', 'BACKEND_PROFILE', 'BACKEND_STATUS', 'CHROME_PROFILES', 'CODE_CONFIG',
+           'CODE_LOCAL_SETTINGS', 'CODE_SETTINGS', 'CONNECTION_PROFILE', 'CONTROLLER_STATUS', 'COWORK_RUNS',
+           'CUSTOMIZATION_RUNS', 'DESKTOP_3P', 'DESKTOP_DATA', 'DESKTOP_ROAMING', 'EDITOR_SETTINGS', 'EXTENSION_CLI',
+           'EXTENSION_EXCLUDED_FLAG', 'JOURNAL_FILE', 'KEY_RUNS', 'L1_PROGRAM', 'MEMORY_FILE', 'OPERATION_LOCK',
+           'PACKAGE_DIR', 'PLAN_FILE', 'PRODUCT', 'PROFILE_MARKER', 'PROGRAM_DIR', 'Paths', 'RESULT_FILE', 'RUNS',
+           'SOURCE_DIR', 'STANDALONE_CLI', 'TOOL_HOME', 'VSCODE_EXTENSIONS', 'app_local', 'code_config', 'code_home',
+           'controller', 'controller_folder', 'desktop_data', 'desktop_package', 'discover', 'inspect', 'ipc_home',
+           'l1_program', 'resolve', 'run_folder', 'select', 'selection_file', 'standalone_cli', 'tool_home',
+           'validate_root', 'vscode_extensions']
 
 # ClaudeReset's own places
 # The program's own files: this package, the folder with launcher.py, and the program (or repository) root.
@@ -23,7 +34,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 SOURCE_DIR = PACKAGE_DIR.parent
 PROGRAM_DIR = SOURCE_DIR.parent
 PRODUCT = config.PRODUCT_NAME           # folder in LOCALAPPDATA and in Program Files (service bundle)
-L1_PROGRAM = 'ClaudeReset-L1'           # Program Files folder of the installed L1 controller and runner
+L1_PROGRAM = config.L1_PROGRAM          # Program Files folder of the installed L1 controller and runner
 TOOL_HOME = '.claude-reset'             # in the user profile: builds, backend, window settings, flags
 IPC_HOME = '.claude-reset-ipc'          # in the user profile: requests to the Desktop package worker
 STATE_SELECTION = 'state-root.json'     # in TOOL_HOME: the explicitly selected state root
@@ -35,7 +46,7 @@ RUNS = 'runs'                           # in the state root: one folder per rese
 KEY_RUNS = 'key-runs'
 COWORK_RUNS = 'cowork-runs'
 CUSTOMIZATION_RUNS = 'customization-runs'
-CHROME_PROFILES = 'ChromeProfiles'
+CHROME_PROFILES = config.CHROME_PROFILES
 EDITOR_PROFILES = 'ClaudeOnlyVSCode'
 CONNECTION_PROFILE = 'connection.dpapi'
 OPERATION_LOCK = 'operation.lock'
@@ -79,7 +90,7 @@ def controller_folder(state_root) -> Path:
     return Path(state_root) / CONTROLLER
 
 
-def ipc_home(home=None) -> Path:
+def ipc_home(home=None) -> Path:   # None: Path.home(), looked up on each call
     return Path(home or Path.home()) / IPC_HOME
 
 

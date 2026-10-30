@@ -5,6 +5,8 @@ Links show their text: the help never opens a browser.
 """
 import re
 
+__all__ = ['blocks', 'inline']
+
 HEADING = re.compile(r'(#{1,6})\s+(.*)')
 BULLET = re.compile(r'(\s*)[-*+]\s+(.*)')
 NUMBER = re.compile(r'(\s*)(\d+)[.)]\s+(.*)')

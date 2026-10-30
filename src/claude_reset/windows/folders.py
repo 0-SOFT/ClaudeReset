@@ -1,16 +1,15 @@
 """Windows known folders, read from the shell rather than from environment variables."""
 from __future__ import annotations
+
 import ctypes
 import os
-from pathlib import Path
 import uuid
+from pathlib import Path
 
-from .api import Library
 from ..errors import SafetyError
-from .powershell import ps_json, quote
-from collections.abc import Iterable
+from .api import Library
 
-__all__ = ['acl_rows', 'drive_type', 'physical_local_appdata', 'program_files']
+__all__ = ['drive_type', 'physical_local_appdata', 'program_files']
 
 LOCAL_APPDATA = uuid.UUID('f1b32785-6fba-4fcf-9d55-7b8e7f157091')   # FOLDERID_LocalAppData
 NO_PACKAGE_REDIRECTION = 0x10000                                    # KF_FLAG_NO_PACKAGE_REDIRECTION
@@ -45,9 +44,3 @@ def program_files() -> Path:
         raise SafetyError('The Windows Program Files location is unavailable')
     return Path(value.value)
 
-
-def acl_rows(paths: Iterable[Path | str]) -> dict | None:
-    """Owner, protection, reparse flag and access rules of each path, read with Get-Acl; changes nothing."""
-    values=','.join(quote(str(p)) for p in paths)
-    result=ps_json("@{rows=@("+values+"|ForEach-Object {$p=$_;$a=Get-Acl -LiteralPath $p -ErrorAction Stop;$f=Get-Item -LiteralPath $p -Force -ErrorAction Stop;@{path=$p;owner=$a.GetOwner([Security.Principal.SecurityIdentifier]).Value;protected=$a.AreAccessRulesProtected;reparse=[bool]($f.Attributes -band [IO.FileAttributes]::ReparsePoint);rules=@($a.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])|ForEach-Object {@{sid=$_.IdentityReference.Value;rights=[long]$_.FileSystemRights;type=[string]$_.AccessControlType}})}})}|ConvertTo-Json -Depth 6 -Compress")
-    return result

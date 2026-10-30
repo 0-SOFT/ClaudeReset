@@ -1,6 +1,8 @@
 import pytest
-from test_reset import paths, write, FakeCrypto
-from claude_reset.reset import customizations as cs, desktop_keys as dk
+from test_reset import FakeCrypto, paths, write
+
+from claude_reset.reset import customizations as cs
+from claude_reset.reset import desktop_keys as dk
 from claude_reset.safeio import SafetyError, remove_owned
 
 
@@ -39,7 +41,8 @@ def test_new_customization_blocks_scope_expansion(paths, customization):
 
 
 def test_readonly_owned_file_can_be_deleted(paths):
-    import os,stat
+    import os
+    import stat
     if os.name != 'nt':
         pytest.skip('Windows read-only attribute')
     target = paths.home / 'readonly-owned'

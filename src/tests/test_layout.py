@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
+
 import pytest
+
 from claude_reset import layout as state
 from claude_reset.safeio import SafetyError
 
@@ -74,6 +76,7 @@ def test_resolved_drops_only_the_local_long_path_prefix(tmp_path):
 def test_folder_created_at_the_same_moment_is_not_refused(tmp_path):
     """Regression: a lock file guarded while another instance creates its folder was refused as outside the root."""
     import threading
+
     from claude_reset import safeio
     local=tmp_path/'local'; local.mkdir()
     for attempt in range(60):

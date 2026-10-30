@@ -2,9 +2,12 @@
 import json
 import re
 
-from ..windows.pin import PinnedFile
-from ..model.records import Observation, exact
+from ..errors import SafetyError
 from ..model.notes import Note
+from ..model.records import Observation, exact
+from ..windows.pin import PinnedFile
+
+__all__ = ['summarize']
 
 
 def summarize(path):
@@ -21,7 +24,7 @@ def summarize(path):
     try:
         with PinnedFile(path, limit=65536) as source:
             lines = source.data.decode('utf-8').splitlines()
-    except Exception:
+    except (SafetyError, OSError, ValueError):
         return result
     for line in lines:
         try:

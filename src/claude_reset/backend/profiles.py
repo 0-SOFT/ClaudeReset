@@ -1,17 +1,20 @@
 """Encrypted, inactive tunnel profiles. Import never selects or starts a route."""
 from __future__ import annotations
+
 import json
-from pathlib import Path
 import re
-from .attestation import inspect_sing_box
-from ..safeio import local_path
+from pathlib import Path
+
 from ..errors import SafetyError
-from ..safeio import atomic_bytes, guarded, local_volume
-from ..windows.system import DPAPI
-from ..model.jsonc import strict_loads
-from ..model.status import Backend
-from ..model.records import EngineProfile, exact
 from ..model.ids import new_id
+from ..model.jsonc import strict_loads
+from ..model.records import EngineProfile, exact
+from ..model.status import Backend
+from ..safeio import atomic_bytes, guarded, local_path, local_volume
+from ..windows.dpapi import DPAPI
+from .attestation import inspect_sing_box
+
+__all__ = ['LIMIT', 'catalog', 'decode', 'import_profile', 'load', 'status', 'summary']
 
 LIMIT = 65536
 
@@ -52,7 +55,7 @@ def summary(identifier, profile):
         'selected': False, 'client_network_opened': False, 'full_tunnel_verified': False}
 
 
-def import_profile(paths, file, *, crypto=None):
+def import_profile(paths, file, *, crypto=DPAPI()):
     # Reject remote paths before opening: importing must not itself contact SMB.
     file = Path(file)
     local_path(str(file))
@@ -65,11 +68,11 @@ def import_profile(paths, file, *, crypto=None):
         raise SafetyError('Backend profile size limit exceeded')
     identifier = new_id()
     root = paths.state / 'backend-profiles'
-    atomic_bytes(root / (identifier + '.dpapi'), (crypto or DPAPI()).encrypt(payload), paths.state)
+    atomic_bytes(root / (identifier + '.dpapi'), crypto.encrypt(payload), paths.state)
     return summary(identifier, profile)
 
 
-def load(paths, identifier, *, crypto=None):
+def load(paths, identifier, *, crypto=DPAPI()):
     if not isinstance(identifier, str) or not re.fullmatch('[a-f0-9]{32}', identifier):
         raise SafetyError('Invalid backend profile ID')
     file = guarded(paths.state / 'backend-profiles' / (identifier + '.dpapi'), paths.state)
@@ -77,14 +80,14 @@ def load(paths, identifier, *, crypto=None):
         encrypted = stream.read(LIMIT * 2 + 1)
     if len(encrypted) > LIMIT * 2:
         raise SafetyError('Encrypted backend size limit exceeded')
-    return decode((crypto or DPAPI()).decrypt(encrypted))
+    return decode(crypto.decrypt(encrypted))
 
 
-def status(paths, identifier, *, crypto=None):
+def status(paths, identifier, *, crypto=DPAPI()):
     return summary(identifier, load(paths, identifier, crypto=crypto))
 
 
-def catalog(paths, *, crypto=None):
+def catalog(paths, *, crypto=DPAPI()):
     root = guarded(paths.state / 'backend-profiles', paths.state)
     rows = []
     if root.exists():

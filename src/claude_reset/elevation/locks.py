@@ -3,11 +3,13 @@
 The permanent file must never be replaced or removed. Failure to acquire it
 refuses admission; callers must not wait for a controller or UAC while holding it.
 """
-from contextlib import contextmanager
 import os
+from contextlib import contextmanager
 
-from ..errors import SafetyError
 from .. import layout
+from ..errors import SafetyError
+
+__all__ = ['AdmissionUnavailable', 'locked']
 
 
 class AdmissionUnavailable(SafetyError):

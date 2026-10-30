@@ -2,20 +2,22 @@
 import ctypes
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-
-from claude_reset.elevation import locks as admission, admission as gate, request as uac
-from claude_reset.network import controller_status
-from claude_reset.elevation import claims
-from claude_reset.network import controller as guard, controller_process
-from claude_reset.safeio import SafetyError
 from test_uac_request import paths
+
+from claude_reset.elevation import admission as gate
+from claude_reset.elevation import claims
+from claude_reset.elevation import locks as admission
+from claude_reset.elevation import request as uac
+from claude_reset.network import controller as guard
+from claude_reset.network import controller_process, controller_status
+from claude_reset.safeio import SafetyError
 
 
 @pytest.fixture

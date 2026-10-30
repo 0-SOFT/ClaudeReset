@@ -1,7 +1,7 @@
 """The versions the owner added on 28 Oct 2026 pass the version gate; every other gate stays in force."""
 import pytest
+from test_reset import paths, platform, write
 
-from test_reset import paths, write, platform
 from claude_reset.reset.planner import build_plan
 
 VERSION_BLOCKERS = ('version_unverified',)

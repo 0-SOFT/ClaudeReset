@@ -1,8 +1,10 @@
-from loopback_only import loopback_only
-import socket
 import base64
+import socket
 import threading
+
 import pytest
+from loopback_only import loopback_only
+
 from claude_reset.network import tunnel_transport as transport
 from claude_reset.network.connections import read_exact
 from claude_reset.safeio import SafetyError

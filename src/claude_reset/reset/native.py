@@ -1,17 +1,21 @@
 """Launch the bundled worker with verified MSIX identity, without launching Claude."""
 from __future__ import annotations
+
 import json
-from pathlib import Path
 import sys
 import time
-from .native_worker import FAMILY
+from pathlib import Path
+
+from .. import config, layout
 from ..errors import SafetyError
-from ..safeio import guarded, atomic_bytes, remove_owned
-from ..windows import process
-from ..windows.system import DPAPI, ps_json
-from .. import config
-from .. import layout
 from ..model.ids import new_id
+from ..safeio import atomic_bytes, guarded, remove_owned
+from ..windows import process
+from ..windows.dpapi import DPAPI
+from ..windows.powershell import ps_json, quote
+from .native_worker import FAMILY
+
+__all__ = ['call_native']
 
 
 def call_native(paths, operation, **arguments):
@@ -34,7 +38,6 @@ def call_native(paths, operation, **arguments):
     else:
         executable = str(Path(sys.executable).with_name(config.PYTHONW))
         args = [str(layout.SOURCE_DIR / 'launcher.py'), '--native-worker', str(path)]
-    quote = lambda text: "'" + text.replace("'", "''") + "'"
     command = ('Invoke-CommandInDesktopPackage -PackageFamilyName ' + quote(FAMILY) +
                ' -AppId Claude -Command ' + quote(executable) +
                ' -Args ' + quote(process.command_line(args)) + ' -PreventBreakaway')

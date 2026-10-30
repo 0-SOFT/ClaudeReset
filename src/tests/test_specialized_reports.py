@@ -1,12 +1,17 @@
 """Synthetic profiles and fake native APIs: public reports cannot assert readiness."""
 import json
+
 import pytest
-from test_reset import paths
-from test_customizations import customization
 from test_cowork import setup_cowork
+from test_customizations import customization
 from test_native import native_setup
-from claude_reset.reset import customizations as cs, cowork as cw, desktop_keys as dk
+from test_reset import paths
+
+from claude_reset.reset import cowork as cw
+from claude_reset.reset import customizations as cs
+from claude_reset.reset import desktop_keys as dk
 from claude_reset.safeio import SafetyError
+
 
 @pytest.mark.parametrize('kind',['customization','cowork','native'])
 @pytest.mark.parametrize('failure',[False,True])

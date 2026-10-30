@@ -1,17 +1,19 @@
 """Proxy and protection in plain words: one summary, one main action, one fix per problem. No Tk.
 
-Every action reuses the tested functions behind the specialist window (proxy_form,
-protection_panel, l1_*). Public results carry fixed text only; the measured exit
+Every action reuses the scenarios the specialist window also calls (services.proxy,
+services.protection, network.l1_*). Public results carry fixed text only; the measured exit
 address is shown to the person for confirmation and is never logged here.
 """
 from types import MappingProxyType
 
-from ..network import connections, controller_status, l1_check, remote_backend
-from . import protection_panel
 from ..errors import SafetyError
-from ..model.status import ProtectionState, Proxy
-from ..services import protection
-from ..services import proxy
+from ..model.status import Fix, ProtectionState, Proxy
+from ..network import connections
+from ..network.probe import Probe
+from ..services import protection, proxy
+from . import protection_panel
+
+__all__ = ['CLIENTS', 'FIXES', 'MESSAGES', 'PROBLEMS', 'STATES', 'connect', 'draft', 'message', 'recheck', 'summary']
 
 PROBLEMS = MappingProxyType({
     'exit_mismatch': 'Прокси выходит в интернет с другого адреса, чем вы подтвердили.',
@@ -32,12 +34,12 @@ STATES = MappingProxyType({
     ProtectionState.UNKNOWN: ('Состояние не прочиталось', 'Нажмите «Обновить».'),
 })
 FIXES = MappingProxyType({
-    'accept_exit': 'Проверить и принять новый адрес',
-    'retry': 'Проверить прокси снова',
-    'reenter': 'Ввести прокси заново',
-    'restart': 'Перезапустить защиту',
-    'install': 'Включить защиту заново',
-    'resume': 'Снять с паузы и включить',
+    Fix.ACCEPT_EXIT: 'Проверить и принять новый адрес',
+    Fix.RETRY: 'Проверить прокси снова',
+    Fix.REENTER: 'Ввести прокси заново',
+    Fix.RESTART: 'Перезапустить защиту',
+    Fix.INSTALL: 'Включить защиту заново',
+    Fix.RESUME: 'Снять с паузы и включить',
 })
 CLIENTS = MappingProxyType({'client_desktop': 'Claude Desktop', 'client_standalone_cli': 'Claude Code в терминале',
                             'client_vscode_extension': 'Claude Code в VS Code'})
@@ -63,27 +65,25 @@ def message(status):
     return MESSAGES.get(status, 'Не получилось. Повторите или откройте «Режим для специалистов».')
 
 
-def summary(paths, *, collect=l1_check.collect, evaluate=l1_check.evaluate, status=controller_status.status,
-            remote=remote_backend.load):
-    """The protection state in plain words, with one suggested fix."""
-    found = protection.state(paths, collect=collect, evaluate=evaluate, status=status, remote=remote)
-    reason = found.pop('stop_reason', None)
-    if found['state'] == ProtectionState.PROBLEM:
+def summary(paths, *, state=protection.state):
+    """The protection state in plain words, with one suggested fix; state reads it (services.protection.state)."""
+    found = state(paths)
+    if found.state == ProtectionState.PROBLEM:
         title = 'Claude сейчас без сети'
-        text = PROBLEMS.get(reason,
+        text = PROBLEMS.get(found.stop_reason,
                             'Защита установлена, но сейчас не работает.') + ' Напрямую Claude не выйдет — так задумано.'
     else:
-        title, text = STATES[found['state']]
-    clients = [{'name': CLIENTS[client['check']], 'present': client['present']} for client in found['clients']]
-    return dict(found, title=title, text=text, clients=clients)
+        title, text = STATES[found.state]
+    clients = [{'name': CLIENTS[client.check], 'present': client.present} for client in found.clients]
+    return {'state': found.state, 'fix': found.fix, 'proxy': found.proxy, 'proxy_saved': found.proxy_saved,
+            'clients': clients, 'title': title, 'text': text}
 
 
-def draft(proxy_type, host, port, username, password, *, language, probe=None):
+def draft(proxy_type, host, port, username, password, *, language, probe=Probe()):
     """A private draft for checking; a wrong field returns the fixed hint in the window's language and no draft.
-    probe makes the draft's network checks (network.probe.Probe when not given)."""
-    from ..services.proxy import ProxyDraft
+    probe makes the draft's network checks."""
     try:
-        return ProxyDraft(host, port, username, password, proxy_type=proxy_type, probe=probe), None
+        return proxy.ProxyDraft(host, port, username, password, proxy_type=proxy_type, probe=probe), None
     except SafetyError as exc:
         return None, language.error_text(exc)
 
@@ -96,8 +96,8 @@ def connect(paths, checked, *, installed, protect_extension=None, perform=protec
         result = perform(paths, 'change_proxy', confirmed=True, proxy_draft=checked)
     else:
         saved = checked.save(paths, confirmed=True)
-        if saved.get('status') != Proxy.PROXY_SAVED:
-            return {'text': message(saved.get('status')), 'ok': False}
+        if saved.status != Proxy.PROXY_SAVED:
+            return {'text': message(saved.status), 'ok': False}
         result = perform(paths, 'install', confirmed=True, protect_extension=protect_extension)
     return {'text': result['text'], 'ok': True}
 
@@ -105,11 +105,11 @@ def connect(paths, checked, *, installed, protect_extension=None, perform=protec
 def recheck(paths, *, check_saved=proxy.check_saved, load=connections.load):
     """Check the saved proxy again. Returns the private draft and whether the exit is unchanged."""
     checked, outcome = check_saved(paths)
-    if outcome.get('status') != Proxy.PROXY_CHECKED or checked is None or checked.expected is None:
-        return None, {'status': outcome.get('status', 'proxy_check_failed'), 'text': message(outcome.get('status'))}
+    if outcome.status != Proxy.PROXY_CHECKED or checked is None or checked.expected is None:
+        return None, {'status': outcome.status, 'text': message(outcome.status)}
     try:
         saved = (load(paths) or {}).get('expected_exit_ips') or []
-    except Exception:
+    except (SafetyError, OSError, ValueError):
         saved = []
     same = checked.expected['expected_exit_ips'][0] in saved
-    return checked, {'status': Proxy.PROXY_CHECKED, 'same_exit': same, 'text': message('proxy_checked')}
+    return checked, {'status': Proxy.PROXY_CHECKED, 'same_exit': same, 'text': message(Proxy.PROXY_CHECKED)}

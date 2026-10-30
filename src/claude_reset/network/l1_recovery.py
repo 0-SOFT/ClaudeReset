@@ -1,6 +1,8 @@
 """User-level recovery decisions; only the installed controller can issue permits."""
 import re
 
+__all__ = ['backoff', 'decide']
+
 RETRY_STATES = frozenset({'blocked_controller_stopped', 'blocked_exit_mismatch', 'blocked_error'})
 
 

@@ -2,19 +2,20 @@ import base64
 import io
 import json
 import os
-from pathlib import Path
 import sqlite3
 import subprocess
-import pytest
-from claude_reset.layout import Paths
-from claude_reset.reset.planner import build_plan
-from claude_reset.reset.execution import Executor, recover_memory
-from claude_reset.reset.core import snapshot_memory, restore_memory, validate_memory_bundle
-from claude_reset.safeio import SafetyError, guarded, remove_owned, fingerprint
-from claude_reset.reset.new_account import network_probe, launch_clean_chrome
-from claude_reset.windows.system import DPAPI, set_istanbul_same_offset
-from claude_reset.windows.system import DPAPI
+from pathlib import Path
 
+import pytest
+
+from claude_reset.layout import Paths
+from claude_reset.reset.execution import Executor, recover_memory
+from claude_reset.reset.memory import restore_memory, snapshot_memory, validate_memory_bundle
+from claude_reset.reset.new_account import launch_clean_chrome, network_probe
+from claude_reset.reset.planner import build_plan
+from claude_reset.safeio import SafetyError, fingerprint, guarded, remove_owned
+from claude_reset.windows.dpapi import DPAPI
+from claude_reset.windows.timezone import set_istanbul_same_offset
 
 # The tests encrypt with the program's own current-user DPAPI, so code that builds its own crypto reads what
 # the tests wrote; doubles that fail on purpose subclass it.
@@ -242,7 +243,7 @@ def test_symlink_cannot_escape(paths):
 
 @pytest.mark.skipif(os.name != 'nt', reason='Windows junction')
 def test_windows_junction_is_rejected(paths):
-    from claude_reset.windows.system import ps_json
+    from claude_reset.windows.powershell import ps_json
     outside = paths.home.parent / 'junction-target'
     outside.mkdir()
     write(outside / 'keep.txt', 'KEEP')
@@ -261,16 +262,17 @@ def test_windows_junction_is_rejected(paths):
 
 def test_gui_can_render_fixture_plan_without_scanning_live_data(paths, tk_root):
     import tkinter as tk
+
     from claude_reset.ui.expert_window import App
     root = tk.Toplevel(tk_root)  # the run's one Tk interpreter (see conftest.py)
     root.withdraw()
     try:
         app = App(root=root, paths=paths)
         p = plan_for(paths, ('chrome',))
-        app.show_plan(p)
+        app.analysis_tab.show_plan(p)
         root.update_idletasks()
         assert root.state() == 'withdrawn'
-        assert 'ПЛАН ЛОКАЛЬНЫХ ОПЕРАЦИЙ' in app.text.get('1.0', 'end')
+        assert 'ПЛАН ЛОКАЛЬНЫХ ОПЕРАЦИЙ' in app.analysis_tab.text.get('1.0', 'end')
         from tkinter.scrolledtext import ScrolledText
         result = {'observations': ['not_verified'] * 1000}
         window = app.show_json(result)

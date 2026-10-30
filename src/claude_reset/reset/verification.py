@@ -1,11 +1,16 @@
 """Explicit acceptance evidence; a manual checklist is never a measured result."""
 from __future__ import annotations
+
 import re
 from types import MappingProxyType
-from ..errors import SafetyError
-from ..safeio import atomic_json
+
 from .. import layout
+from ..errors import SafetyError
 from ..model.records import exact
+from ..safeio import atomic_json
+from ..windows.dpapi import DPAPI
+
+__all__ = ['FUNCTIONAL_FAILURES', 'save_evidence', 'summarize', 'template', 'template_for_run']
 
 TESTS = MappingProxyType({
     'T-01': 'Inventory, versions, authentication and restoration sources',
@@ -93,7 +98,7 @@ def summarize(evidence):
         raise SafetyError('Verification evidence has an unknown schema or contains unsupported fields') from None
 
 
-def _private_scope(paths, run_id, crypto=None):
+def _private_scope(paths, run_id, crypto=DPAPI()):
     """Read only scope from a private journal while the caller holds its lock."""
     from .execution import Executor
     # Validate before constructing any path, even when no journal exists.
@@ -107,13 +112,13 @@ def _private_scope(paths, run_id, crypto=None):
     return template(run_id, journal['plan'].get('components'))['components']
 
 
-def template_for_run(paths, run_id, crypto=None):
+def template_for_run(paths, run_id, crypto=DPAPI()):
     from .execution import operation_lock
     with operation_lock(paths):
         return template(run_id, _private_scope(paths, run_id, crypto))
 
 
-def save_evidence(paths, evidence, crypto=None):
+def save_evidence(paths, evidence, crypto=DPAPI()):
     from .execution import operation_lock
     summary = summarize(evidence)
     with operation_lock(paths):

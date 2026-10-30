@@ -4,6 +4,7 @@ A Note is its code as a string, so reports and JSON keep the code. The windows a
 text from ui.text, in their language.
 """
 from __future__ import annotations
+
 from collections.abc import Iterable
 
 __all__ = ['Note', 'unique']

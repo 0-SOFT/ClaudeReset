@@ -1,8 +1,9 @@
 import pytest
-from claude_reset import safeio, layout
+from test_reset import paths
+
+from claude_reset import layout, safeio
 from claude_reset.backend import profiles as backend_profiles
 from claude_reset.network import strict_wfp
-from test_reset import paths
 
 
 def test_mapped_remote_drive_rejected_before_any_file_lookup(tmp_path, paths, monkeypatch):

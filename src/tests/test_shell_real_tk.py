@@ -7,24 +7,28 @@ import tkinter as tk
 from pathlib import Path
 
 import pytest
-from claude_reset.model.confirmation import Confirmation
-
-from claude_reset.network import remote_backend
-from claude_reset.ui import protection_panel, reset_flow, shell
-from claude_reset.layout import Paths
 from proxy_fakes import Probe, working
 from scripted import Strict
+
+from claude_reset.layout import Paths
+from claude_reset.model.confirmation import Confirmation
+from claude_reset.model.notes import Note
+from claude_reset.model.status import BlockerKind, Browsers, Collected, DesktopKeys, Reset
+from claude_reset.network import remote_backend
+from claude_reset.services.diagnostics import History, HistoryRow
+from claude_reset.services.reset import Blocker, CheckResult, Found, WipeResult
+from claude_reset.ui import protection_panel, reset_flow, shell
 
 SUMMARY = {'state': 'paused', 'title': 'Защита на паузе', 'text': 'Claude сейчас выходит в интернет напрямую, без прокси.',
            'fix': 'resume', 'proxy': 'VLESS', 'proxy_saved': True, 'clients': [{'name': 'Claude Desktop', 'present': True}]}
 
 
-def program(summaries=(SUMMARY,), rows=()):
+def program(summaries=(SUMMARY,), statuses=()):
     """The window's program with scripted reads; it has no network or L1: a check it was not given fails the test."""
-    value = shell.Program()
+    value = shell.Program(probe=Probe(), l1=Strict())
     value.protection = lambda paths: summaries[-1]
-    value.history = lambda paths: {'rows': list(rows)}
-    value.probe, value.l1 = Probe(), Strict()
+    rows = tuple(HistoryRow(n, status, Note('history.note')) for n, status in enumerate(statuses, 1))
+    value.history = lambda paths: History(Collected.COMPLETE, rows=rows)
     return value
 
 
@@ -49,7 +53,7 @@ def ui(tmp_path, monkeypatch, tk_root):
     top = tk.Toplevel(tk_root)
     top.withdraw()
     window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', language='ru',
-                         program=program(summaries, [{'status': 'fixed_locations_wiped'}]))
+                         program=program(summaries, [Reset.FIXED_LOCATIONS_WIPED]))
     window.ask = Answers()
     window.summaries = summaries
     pump(window)
@@ -129,38 +133,40 @@ class FakeSession:
 
     def wipe(self, word, *, browsers, step):
         self.calls.append(('wipe', word, browsers))
-        return step('wipe', lambda: {'status': 'done', 'memory': 'restored_verbatim', 'desktop_keys': 'not_supported',
-                                     'browsers': 'browsers_open', 'passwords_removed': 2, 'no_files_left': True})
+        return step('wipe', lambda: WipeResult(Reset.DONE, DesktopKeys.NOT_SUPPORTED, memory='restored_verbatim',
+                                               browsers=Browsers.BROWSERS_OPEN, passwords_removed=2,
+                                               no_files_left=True))
 
 
 def found(blockers=()):
-    return {'rows': [{'label': 'Desktop', 'bytes': 12 * 1024 ** 3 // 10, 'status': 'present'}],
-            'total_bytes': 12 * 1024 ** 3 // 10, 'credentials': 2, 'blockers': list(blockers), 'ready': not blockers, 'nothing_found': False}
+    size = 12 * 1024 ** 3 // 10
+    return CheckResult(rows=(Found('Desktop', size, 'present'),), total_bytes=size, credentials=2,
+                       blockers=tuple(blockers), ready=not blockers, nothing_found=False)
 
 
-AUTO = {'key': 'processes', 'kind': 'auto'}
-VSCODE = {'key': 'vscode', 'kind': 'user'}
+AUTO = Blocker('processes', BlockerKind.AUTO)
+VSCODE = Blocker('vscode', BlockerKind.USER)
 
 
 def test_reset_waits_for_the_site_step(ui):
     ui.program.reset = lambda *a, **k: pytest.fail('started')
-    ui.reset_start()
+    ui.reset_page.reset_start()
     assert ui.ask.asked[-1]['title'] == 'Сначала сайт Claude'
 
 
 def test_one_button_reset_resolves_confirms_and_wipes(ui):
     FakeSession.checks, FakeSession.instances = [found([AUTO]), found()], []
     ui.program.reset = FakeSession
-    ui.server_done.set(True)
+    ui.reset_page.server_done.set(True)
     ui.ask.replies = [True]
-    ui.reset_start()
+    ui.reset_page.reset_start()
     pump(ui)
     pump(ui)
     session = FakeSession.instances[-1]
     assert session.calls == ['check', 'resolve', ('wipe', Confirmation.ERASE, True)]
     confirm = ui.ask.asked[0]
     assert confirm['typed'] == 'СТЕРЕТЬ' and 'Claude Desktop: вход, история, настройки — 1,2 ГБ' in confirm['lines']
-    shown = list(texts(ui.reset_result))
+    shown = list(texts(ui.reset_page.reset_result))
     assert 'Готово ✓' in shown and 'Память Claude Code возвращена на место.' in shown
     assert any('не сброшен' in t for t in shown) and 'Выйти из claude.ai в браузерах' in shown
 
@@ -168,20 +174,20 @@ def test_one_button_reset_resolves_confirms_and_wipes(ui):
 def test_reset_stops_and_explains_what_the_person_must_do(ui):
     FakeSession.checks, FakeSession.instances = [found([VSCODE])], []
     ui.program.reset = FakeSession
-    ui.server_done.set(True)
-    ui.reset_start()
+    ui.reset_page.server_done.set(True)
+    ui.reset_page.reset_start()
     pump(ui)
     assert FakeSession.instances[-1].calls == ['check'] and not ui.ask.asked
-    shown = list(texts(ui.reset_result))
+    shown = list(texts(ui.reset_page.reset_result))
     assert 'Нужно сделать вам' in shown and 'Проверить снова' in shown
 
 
 def test_cancelled_confirmation_deletes_nothing(ui):
     FakeSession.checks, FakeSession.instances = [found()], []
     ui.program.reset = FakeSession
-    ui.server_done.set(True)
+    ui.reset_page.server_done.set(True)
     ui.ask.replies = [None]
-    ui.reset_start()
+    ui.reset_page.reset_start()
     pump(ui)
     assert FakeSession.instances[-1].calls == ['check']
 
@@ -189,25 +195,25 @@ def test_cancelled_confirmation_deletes_nothing(ui):
 def test_wrong_proxy_fields_are_explained_inline(ui):
     ui.show('proxy')
     pump(ui)
-    ui.fields['host'].set('proxy.example')
-    ui.proxy_go()
-    assert 'IPv4' in ui.proxy_error.cget('text')
+    ui.proxy_page.fields['host'].set('proxy.example')
+    ui.proxy_page.proxy_go()
+    assert 'IPv4' in ui.proxy_page.proxy_error.cget('text')
 
 
 def test_proxy_check_confirm_and_switch_on(ui):
     ui.summaries.append(dict(SUMMARY, state='off', fix=None, title='Защита выключена'))
     ui.show('proxy')
     pump(ui)
-    assert ui.proxy_button.cget('text') == 'Проверить и включить защиту'
+    assert ui.proxy_page.proxy_button.cget('text') == 'Проверить и включить защиту'
 
     ui.program.probe = working('9.9.9.9')
     boundary = next(iter(protection_panel.LIMITS))
     ui.program.l1 = Strict(boundaries=[boundary], install={'status': 'installed'})
     for key, value in (('host', '9.9.9.9'), ('port', '1080'), ('username', 'u'), ('password', 'secret-pass')):
-        ui.fields[key].set(value)
-    ui.protect_extension.set(True)
+        ui.proxy_page.fields[key].set(value)
+    ui.proxy_page.protect_extension.set(True)
     ui.ask.replies = [True, True, True]
-    ui.proxy_go()
+    ui.proxy_page.proxy_go()
     for _ in range(4):
         pump(ui)
     titles = [a['title'] for a in ui.ask.asked]
@@ -225,8 +231,8 @@ def test_proxy_check_confirm_and_switch_on(ui):
     ('paused', 'resume', ['Снять с паузы и включить', 'Выключить защиту']),
     ('off', None, ['Удалить сохранённый прокси'])])
 def test_protection_card_offers_the_right_actions(ui, state, fix, expected):
-    ui.paint_proxy(dict(SUMMARY, state=state, fix=fix, title='T'))
-    shown = list(texts(ui.proxy_state))
+    ui.proxy_page.paint_proxy(dict(SUMMARY, state=state, fix=fix, title='T'))
+    shown = list(texts(ui.proxy_page.proxy_state))
     assert all(label in shown for label in expected)
 
 
@@ -242,7 +248,8 @@ def test_typed_dialog_unlocks_only_on_the_exact_word(ui):
 
 
 def test_theme_switch_rebuilds_in_place_and_is_remembered(ui):
-    from claude_reset.ui import brand, settings as ui_settings
+    from claude_reset.ui import brand
+    from claude_reset.ui import settings as ui_settings
     ui.show('reset')
     ui.set_theme('dark')
     assert ui.theme.mode == 'dark' and ui.theme.colors['paper'] == brand.DARK['paper']
@@ -258,7 +265,7 @@ def test_theme_switch_rebuilds_in_place_and_is_remembered(ui):
 def test_keyboard_reaches_every_step(ui):
     ui.root.event_generate('<Alt-Key-2>')
     assert ui.current == 'reset'
-    frame = [f for value, f, _, _ in ui.choices if value == 'none'][0]
+    frame = [f for value, f, _, _ in ui.reset_page.choices if value == 'none'][0]
     assert str(frame.cget('takefocus')) in ('1', 'True', 'true')
     # Key events go to the focused window: show it off screen so it can take focus.
     ui.root.geometry('+-4000+-4000')
@@ -270,7 +277,7 @@ def test_keyboard_reaches_every_step(ui):
         assert str(frame.cget('style')) == 'ChoiceFocus.TFrame'
         frame.event_generate('<space>')
         ui.root.update()
-        assert ui.keep_memory.get() == 'none' and str(frame.cget('style')) == 'ChoiceOnFocus.TFrame'
+        assert ui.reset_page.keep_memory.get() == 'none' and str(frame.cget('style')) == 'ChoiceOnFocus.TFrame'
         ui.nav['help'].focus_force()
         ui.root.update()
         ui.nav['help'].event_generate('<Return>')
@@ -293,7 +300,7 @@ def test_window_fits_a_small_screen(tk_root, tmp_path):
 
 def test_help_is_rendered_not_raw_markdown(ui):
     before = set(ui.root.winfo_children())
-    ui.open_doc('guide')
+    ui.help_page.open_doc('guide')
     window = [w for w in ui.root.winfo_children() if w not in before][0]
     text = [w for w in window.winfo_children() if isinstance(w, tk.Text)][0]
     content = text.get('1.0', 'end')
@@ -327,12 +334,12 @@ def test_reset_continues_by_itself_once_the_person_closes_vs_code(ui):
     # two checks while VS Code is open, one that sees it closed, and the fresh check before the wipe
     FakeSession.checks, FakeSession.instances = [found([VSCODE]), found([VSCODE]), found(), found()], []
     ui.program.reset = FakeSession
-    ui.WATCH_MS = 20
-    ui.server_done.set(True)
+    ui.reset_page.WATCH_MS = 20
+    ui.reset_page.server_done.set(True)
     ui.ask.replies = [True]
     ui.show('reset')
     pump(ui)
-    ui.reset_start()
+    ui.reset_page.reset_start()
     end = time.time() + 15
     while time.time() < end and not any(isinstance(c, tuple) for c in FakeSession.instances[-1].calls):
         ui.root.update()
@@ -345,11 +352,11 @@ def test_reset_continues_by_itself_once_the_person_closes_vs_code(ui):
 def test_leaving_the_page_stops_waiting(ui):
     FakeSession.checks, FakeSession.instances = [found([VSCODE])] * 3, []
     ui.program.reset = FakeSession
-    ui.WATCH_MS = 400
-    ui.server_done.set(True)
+    ui.reset_page.WATCH_MS = 400
+    ui.reset_page.server_done.set(True)
     ui.show('reset')
     pump(ui)
-    ui.reset_start()
+    ui.reset_page.reset_start()
     pump(ui)
     ui.show('home')
     pump(ui)
@@ -381,20 +388,21 @@ def test_english_window_has_no_russian_anywhere(tk_root, tmp_path):
         assert russian() == []
         for state, fix in (('on', None), ('problem', 'accept_exit'), ('paused', 'resume'), ('partial', 'install'),
                            ('off', None), ('unknown', None)):
-            window.paint_proxy({'state': state, 'fix': fix, 'proxy': 'SOCKS5', 'proxy_saved': True,
+            window.proxy_page.paint_proxy({'state': state, 'fix': fix, 'proxy': 'SOCKS5', 'proxy_saved': True,
                                 'title': {'on': 'Защита включена', 'paused': 'Защита на паузе'}.get(state, 'Claude сейчас без сети'),
                                 'text': 'Прокси не отвечает. Напрямую Claude не выйдет — так задумано.',
                                 'clients': [{'name': 'Claude Code в терминале', 'present': True}]})
             assert russian() == [], state
-        window.session = type('S', (), {'keep_memory': True, 'accept_unlisted': False})()
-        window.reset_checked({'rows': [{'label': 'Claude Code: история, проекты, память', 'size': '40,3 МБ', 'status': 'present'}],
+        window.reset_page.session = type('S', (), {'keep_memory': True, 'accept_unlisted': False})()
+        window.reset_page.reset_checked({'rows': [{'label': 'Claude Code: история, проекты, память', 'size': '40,3 МБ', 'status': 'present'}],
                               'total': '40,3 МБ', 'credentials': 2, 'nothing_found': False, 'ready': False,
                               'blockers': [{'key': 'vscode', 'kind': 'user', 'text': reset_flow.BLOCKERS['vscode']},
                                            {'key': 'processes', 'kind': 'auto', 'text': reset_flow.BLOCKERS['processes']}]}, False)
-        window.stop_watch()
-        assert russian() == [] and '40.3 MB' in list(texts(window.reset_result))
-        window.reset_done({'stage': 'wiped', 'result': {'status': 'done', 'memory': 'restored_verbatim', 'desktop_keys': 'not_supported',
-                                                        'browsers': 'browsers_open', 'passwords_removed': 2, 'no_files_left': True}})
+        window.reset_page.stop_watch()
+        assert russian() == [] and '40.3 MB' in list(texts(window.reset_page.reset_result))
+        wiped = WipeResult(Reset.DONE, DesktopKeys.NOT_SUPPORTED, memory='restored_verbatim',
+                           browsers=Browsers.BROWSERS_OPEN, passwords_removed=2, no_files_left=True)
+        window.reset_page.reset_done({'stage': 'wiped', 'result': wiped})
         assert russian() == []
         assert window.ask.asked == []
     finally:

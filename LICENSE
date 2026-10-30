@@ -19,11 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This license covers ClaudeReset's own code. Third-party components keep their
-own licenses, listed in third_party/NOTICES.md. The installer and the portable
-archive include dissect.hypervisor and dissect.extfs, licensed AGPL-3.0-or-later,
-so the program as distributed in that form is conveyed under the terms of the
-AGPL-3.0; its complete corresponding source is this repository.

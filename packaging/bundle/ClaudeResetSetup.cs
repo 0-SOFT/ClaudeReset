@@ -32,8 +32,8 @@ class InstallError : Exception
 
 class Options
 {
-    public string Home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "ClaudeReset");
-    public string RegistryKey = "ClaudeReset";
+    public string Home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", Product.Name);
+    public string RegistryKey = Product.Name;
     public string Shortcuts = null;
     public bool Desktop = true;
     public bool Quiet = false;
@@ -51,7 +51,7 @@ class Options
             else if (arg == "/lang=en") L.Ru = false;
             else if (arg == "/lang=ru") L.Ru = true;
         }
-        if (!Regex.IsMatch(o.RegistryKey, "^ClaudeReset[A-Za-z0-9-]*$")) throw new ArgumentException("registry-key");
+        if (!Regex.IsMatch(o.RegistryKey, "^" + Regex.Escape(Product.Name) + "[A-Za-z0-9-]*$")) throw new ArgumentException("registry-key");
         return o;
     }
 }
@@ -71,8 +71,8 @@ static class Installer
         using (var zip = new ZipArchive(payload, ZipArchiveMode.Read))
         {
             string top = zip.Entries[0].FullName.Split('/')[0];
-            if (!Regex.IsMatch(top, @"^ClaudeReset-[0-9A-Za-z.\-]+$")) throw new InstallError(L.T("Установочный пакет повреждён.", "The installation package is damaged."));
-            string version = top.Substring("ClaudeReset-".Length);
+            if (!Regex.IsMatch(top, "^" + Regex.Escape(Product.Name) + @"-[0-9A-Za-z.\-]+$")) throw new InstallError(L.T("Установочный пакет повреждён.", "The installation package is damaged."));
+            string version = top.Substring(Product.Name.Length + 1);
             string appName = "app-" + version;
             Directory.CreateDirectory(o.Home);
             string target = Path.Combine(o.Home, appName);
@@ -81,8 +81,8 @@ static class Installer
             if (Directory.Exists(target))
             {
                 try { Directory.Delete(target, true); }
-                catch (IOException) { throw new InstallError(L.T("Эта версия уже установлена и сейчас работает. Закройте ClaudeReset и повторите.", "This version is already installed and running. Close ClaudeReset and try again.")); }
-                catch (UnauthorizedAccessException) { throw new InstallError(L.T("Эта версия уже установлена и сейчас работает. Закройте ClaudeReset и повторите.", "This version is already installed and running. Close ClaudeReset and try again.")); }
+                catch (IOException) { throw new InstallError(L.T("Эта версия уже установлена и сейчас работает. Закройте " + Product.Name + " и повторите.", "This version is already installed and running. Close " + Product.Name + " and try again.")); }
+                catch (UnauthorizedAccessException) { throw new InstallError(L.T("Эта версия уже установлена и сейчас работает. Закройте " + Product.Name + " и повторите.", "This version is already installed and running. Close " + Product.Name + " and try again.")); }
             }
             string root = Path.GetFullPath(partial) + "\\";
             int done = 0, total = zip.Entries.Count;
@@ -100,13 +100,13 @@ static class Installer
                 if (progress != null && done % 40 == 0) progress(done * 100 / total);
             }
             Directory.Move(partial, target);
-            string launcher = Path.Combine(o.Home, "ClaudeReset.exe");
-            string icon = Path.Combine(o.Home, "ClaudeReset.ico");
-            File.Copy(Path.Combine(target, "ClaudeReset.exe"), launcher, true);
-            File.Copy(Path.Combine(target, "ClaudeReset.ico"), icon, true);
+            string launcher = Path.Combine(o.Home, Product.Name + ".exe");
+            string icon = Path.Combine(o.Home, Product.Name + ".ico");
+            File.Copy(Path.Combine(target, Product.Name + ".exe"), launcher, true);
+            File.Copy(Path.Combine(target, Product.Name + ".ico"), icon, true);
             File.WriteAllText(Path.Combine(o.Home, "current.txt"), appName);
 
-            string menu = Path.Combine(o.Shortcuts ?? Environment.GetFolderPath(Environment.SpecialFolder.Programs), "ClaudeReset.lnk");
+            string menu = Path.Combine(o.Shortcuts ?? Environment.GetFolderPath(Environment.SpecialFolder.Programs), Product.Name + ".lnk");
             Directory.CreateDirectory(Path.GetDirectoryName(menu));
             Shortcut(menu, launcher, icon, o.Home);
             string desktop = "";
@@ -114,16 +114,16 @@ static class Installer
             {
                 string folder = o.Shortcuts != null ? Path.Combine(o.Shortcuts, "Desktop") : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
                 Directory.CreateDirectory(folder);
-                desktop = Path.Combine(folder, "ClaudeReset.lnk");
+                desktop = Path.Combine(folder, Product.Name + ".lnk");
                 Shortcut(desktop, launcher, icon, o.Home);
             }
             long size = 0;
             foreach (string file in Directory.GetFiles(target, "*", SearchOption.AllDirectories)) size += new FileInfo(file).Length;
             using (RegistryKey key = Registry.CurrentUser.CreateSubKey(UninstallRoot + o.RegistryKey))
             {
-                key.SetValue("DisplayName", "ClaudeReset");
+                key.SetValue("DisplayName", Product.Name);
                 key.SetValue("DisplayVersion", version);
-                key.SetValue("Publisher", "0-soft");
+                key.SetValue("Publisher", Product.Publisher);
                 key.SetValue("DisplayIcon", icon);
                 key.SetValue("InstallLocation", o.Home);
                 key.SetValue("UninstallString", "\"" + launcher + "\" --uninstall");
@@ -147,7 +147,7 @@ static class Installer
         linkType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, link, new object[] { target });
         linkType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, link, new object[] { folder });
         linkType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, link, new object[] { icon + ",0" });
-        linkType.InvokeMember("Description", BindingFlags.SetProperty, null, link, new object[] { L.T("ClaudeReset: сброс Claude и прокси", "ClaudeReset: reset Claude and use a proxy") });
+        linkType.InvokeMember("Description", BindingFlags.SetProperty, null, link, new object[] { L.T(Product.Name + ": сброс Claude и прокси", Product.Name + ": reset Claude and use a proxy") });
         linkType.InvokeMember("Save", BindingFlags.InvokeMethod, null, link, null);
         Marshal.FinalReleaseComObject(link);
         Marshal.FinalReleaseComObject(shell);
@@ -361,10 +361,10 @@ class SetupForm : Form
 
     void Texts()
     {
-        Text = L.T("Установка ClaudeReset", "Install ClaudeReset");
+        Text = L.T("Установка " + Product.Name, "Install " + Product.Name);
         tag.Text = L.T("0-SOFT · НАЧНЁМ С НУЛЯ", "0-SOFT · START FROM ZERO");
         language.Text = L.Ru ? "ENGLISH" : "РУССКИЙ";
-        title.Text = L.T("Установка ClaudeReset", "Install ClaudeReset");
+        title.Text = L.T("Установка " + Product.Name, "Install " + Product.Name);
         body.Text = L.T("Программа поставится в вашу папку пользователя, права администратора не нужны. " +
                         "Установка ничего не меняет в Claude: сброс и защиту вы запустите сами из окна программы.",
                         "The program goes into your user folder; no administrator rights are needed. " +
@@ -372,7 +372,7 @@ class SetupForm : Form
         folder.Text = L.T("Папка: ", "Folder: ") + options.Home;
         desktop.Text = L.T("Ярлык на рабочем столе", "Desktop shortcut");
         desktop.Invalidate();
-        primary.Text = launcher == null ? L.T("Установить", "Install") : L.T("Открыть ClaudeReset", "Open ClaudeReset");
+        primary.Text = launcher == null ? L.T("Установить", "Install") : L.T("Открыть " + Product.Name, "Open " + Product.Name);
         secondary.Text = launcher == null ? L.T("Отмена", "Cancel") : L.T("Закрыть", "Close");
         primary.Invalidate();
         secondary.Invalidate();
@@ -420,11 +420,11 @@ class SetupForm : Form
         desktop.Visible = false;
         title.Text = L.T("Готово", "Done");
         body.Text = L.Ru
-            ? "ClaudeReset установлен. Ярлык — в меню «Пуск»" + (options.Desktop ? " и на рабочем столе." : ".") +
+            ? Product.Name + " установлен. Ярлык — в меню «Пуск»" + (options.Desktop ? " и на рабочем столе." : ".") +
               " Дальше всё в окне программы: шаг 1 — сброс, шаг 2 — прокси."
-            : "ClaudeReset is installed. The shortcut is in the Start menu" + (options.Desktop ? " and on the desktop." : ".") +
+            : Product.Name + " is installed. The shortcut is in the Start menu" + (options.Desktop ? " and on the desktop." : ".") +
               " Everything else happens in the program window: step 1 — reset, step 2 — proxy.";
-        primary.Text = L.T("Открыть ClaudeReset", "Open ClaudeReset");
+        primary.Text = L.T("Открыть " + Product.Name, "Open " + Product.Name);
         primary.Size = new Size(220, 48);
         secondary.Location = new Point(272, 360);
         secondary.Text = L.T("Закрыть", "Close");

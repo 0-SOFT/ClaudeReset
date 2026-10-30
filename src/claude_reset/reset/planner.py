@@ -1,25 +1,43 @@
+"""The reset plan: what to erase for each chosen client, found by discovery and fingerprinted, with its blockers.
+
+Planner walks the clients (Code, VS Code, Chrome) and returns a frozen Plan; execution re-checks every fingerprint
+before it deletes anything.
+"""
 from __future__ import annotations
-from dataclasses import dataclass, field
+
 import os
-from pathlib import Path
 import re
-from .core import snapshot_memory, db_keys, owned_vscode_key, vscode_databases
-from ..model import jsonc
-from ..network import l1_settings
-from .catalog import (CLI_VERSIONS, EXTENSION_VERSIONS, DESKTOP_VERSIONS,
-                       CODE_ENTRIES, DESKTOP_STATE, DESKTOP_PRESERVE, DESKTOP_WORK, code_recovery_file,
-                       DESKTOP_JOURNAL_VERSIONS, DESKTOP_JOURNAL_STATE, DESKTOP_DEVELOPER_PRESERVE)
-from .discovery import Inventory, discover
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from .. import config, layout
 from ..errors import SafetyError
-from ..safeio import guarded, fingerprint, walk_files
-from ..windows.system import inspect_windows
-from .. import config
-from .. import layout
-from ..model import clients
-from ..model.status import Reset
+from ..model import clients, jsonc
+from ..model.ids import new_id, utc_now
 from ..model.notes import Note, unique
 from ..model.reset import Action, Plan, Selection
-from ..model.ids import new_id, utc_now
+from ..model.status import Reset
+from ..network import l1_settings
+from ..safeio import fingerprint, guarded, walk_files
+from ..windows.inventory import inspect_windows
+from .catalog import (
+    CLI_VERSIONS,
+    CODE_ENTRIES,
+    DESKTOP_DEVELOPER_PRESERVE,
+    DESKTOP_JOURNAL_STATE,
+    DESKTOP_JOURNAL_VERSIONS,
+    DESKTOP_PRESERVE,
+    DESKTOP_STATE,
+    DESKTOP_VERSIONS,
+    DESKTOP_WORK,
+    EXTENSION_VERSIONS,
+    code_recovery_file,
+)
+from .discovery import Inventory, discover
+from .memory import snapshot_memory
+from .vscode_db import db_keys, owned_vscode_key, vscode_databases
+
+__all__ = ['action_fingerprint', 'build_plan']
 
 COMPONENTS = ('code', 'vscode', 'chrome', 'desktop')
 
@@ -230,12 +248,14 @@ class Planner:
         plan.observations = unique(plan.observations)
 
 
-def build_plan(paths, components=('code', 'vscode', 'chrome'), *, platform_state=None,
-               env=None, selection=None):
+def build_plan(paths, components=('code', 'vscode', 'chrome'), *,
+               platform_state=None,   # None: read from this PC on each call
+               env=os.environ,
+               selection=None):   # None: a new Selection(), which the plan keeps and may change
     paths.validate()
     components = list(components)
     selection = selection or Selection()
-    env = dict(os.environ if env is None else env)
+    env = dict(env)
     state = inspect_windows() if platform_state is None else platform_state
     plan = PlanDraft(new_id(), utc_now(), components)
     plan.selection = selection

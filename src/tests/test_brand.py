@@ -77,8 +77,8 @@ def test_bundled_fonts_and_their_licences_are_present():
 
 def test_dpi_awareness_is_best_effort():
     calls = []
-    assert brand.enable_dpi_awareness(api=calls.append) is True and calls == [1]
+    assert brand.enable_dpi_awareness(api=lambda: calls.append('aware')) is True and calls == ['aware']
 
-    def refuse(_):
+    def refuse():
         raise OSError('not supported')
     assert brand.enable_dpi_awareness(api=refuse) is False

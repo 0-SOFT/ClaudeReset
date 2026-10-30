@@ -4,31 +4,31 @@ Only this package names fwpuclnt functions. Code outside it uses the typed metho
 a session that is not inside transaction() never holds an open WFP transaction.
 """
 from __future__ import annotations
-from collections import namedtuple
-from contextlib import contextmanager
+
 import ctypes as C
-from ctypes import wintypes as W
 import json
 import os
-
-from ..errors import SafetyError
-from . import wfp
-from . import wfp_security
-from .api import Library
-from types import MappingProxyType
-from ..errors import WfpError
+from collections import namedtuple
 from collections.abc import Collection, Iterator
+from contextlib import contextmanager
+from ctypes import wintypes as W
 from pathlib import Path
+from types import MappingProxyType
 
-__all__ = ['APP_ID', 'PROTOTYPES', 'SECURITY_DESCRIPTOR', 'SESSION', 'SID', 'SUBLAYER', 'Session', 'Sublayer', 'blob',
-           'condition_blob', 'condition_sid', 'condition_u32', 'inspect_owned_filters']
+from ..errors import SafetyError, WfpError
+from . import wfp, wfp_security
+from .api import Library
+
+__all__ = ['APP_ID', 'FWP_UINT16', 'FWP_UINT32', 'FWP_UINT8', 'IPPROTO_TCP', 'PROTOTYPES', 'SECURITY_DESCRIPTOR', 'SESSION',
+           'SID', 'SUBLAYER', 'Session', 'Sublayer', 'blob', 'condition_blob', 'condition_sid', 'condition_u32']
 
 SUBLAYER_NOT_FOUND = 0x80320007   # FWP_E_SUBLAYER_NOT_FOUND
 READ_ONLY = 1                     # FWPM_TXN_READ_ONLY
 INDEXED = 0x40                    # FWPM_FILTER_FLAG_INDEXED: BFE adds it on modern Windows
 PERSISTENT = 1                    # FWPM_SUBLAYER_FLAG_PERSISTENT / FWPM_FILTER_FLAG_PERSISTENT
 SID, APP_ID, SECURITY_DESCRIPTOR = 13, 12, 14   # FWP_DATA_TYPE values with pointer data
-U32 = 3
+FWP_UINT8, FWP_UINT16, FWP_UINT32, FWP_UINT64 = 1, 2, 3, 4   # FWP_DATA_TYPE values with inline data
+IPPROTO_TCP = 6
 
 Sublayer = namedtuple('Sublayer', 'flags weight provider data')
 
@@ -99,7 +99,7 @@ def condition_u32(condition: wfp.CONDITION, field: wfp.GUID, data_type: int, val
 
 
 def _weight_group(f):
-    if f.weight.type == 4 and f.weight.value.ptr:   # FWP_UINT64: BFE stores the effective weight
+    if f.weight.type == FWP_UINT64 and f.weight.value.ptr:   # BFE stores the effective weight
         return C.cast(f.weight.value.ptr, C.POINTER(C.c_uint64)).contents.value >> 60
     return f.weight.value.u8 if f.weight.type == 1 else -1
 
@@ -326,46 +326,3 @@ class Session:
         self.call(functions[kind], self.handle, C.byref(key), 5, None, None, None, None, C.byref(pointer))
         return pointer
 
-
-def inspect_owned_filters() -> dict:
-    """Read the ten owned filters. Fails closed: missing or altered filters are reported."""
-    if os.name != 'nt' or C.sizeof(C.c_void_p) != 8:
-        raise SafetyError('This operation requires 64-bit Windows', code='needs_64_bit')
-    if (C.sizeof(wfp.VALUE), C.sizeof(wfp.CONDITION), C.sizeof(wfp.FILTER)) != (16, 40, 200):
-        raise SafetyError('Unexpected WFP structure layout', code='wfp_layout')
-    fw = Library('fwpuclnt', PROTOTYPES)
-    open_engine, close_engine, get_filter = fw.FwpmEngineOpen0, fw.FwpmEngineClose0, fw.FwpmFilterGetByKey0
-    administrator = bool(C.windll.shell32.IsUserAnAdmin())
-    report = {'administrator': administrator, 'read_only': True, 'filters_changed': False, 'firewall_profiles_changed': False}
-    if not administrator:
-        return {**report, 'status': wfp.Inspection.ADMINISTRATOR_REQUIRED, 'passed': False}
-    engine = W.HANDLE()
-    code = open_engine(None, wfp.RPC_C_AUTHN_WINNT, None, None, C.byref(engine))
-    if code:
-        return {**report, 'status': wfp.Inspection.ENGINE_UNAVAILABLE, 'passed': False, 'error_code': '0x%08x' % code}
-    rows, problems = [], []
-    try:
-        for expected in wfp.OWNED_FILTERS:
-            found = C.POINTER(wfp.FILTER)()
-            key = wfp.GUID.of(expected.key)
-            code = get_filter(engine, C.byref(key), C.byref(found))
-            if code:
-                problems.append({'target': expected.target, 'family': expected.family,
-                                 'status': wfp.Inspection.MISSING if code == wfp.FWP_E_FILTER_NOT_FOUND
-                                 else wfp.Inspection.UNREADABLE, 'error_code': '0x%08x' % code})
-                continue
-            try:
-                rows.append(wfp.describe(found.contents, expected))
-            except SafetyError as exc:
-                problems.append({'target': expected.target, 'family': expected.family,
-                                 'status': wfp.Inspection.UNEXPECTED_STRUCTURE, 'reason': str(exc)})
-            finally:
-                pointer = C.cast(found, C.c_void_p)
-                fw.FwpmFreeMemory0(C.byref(pointer))
-    finally:
-        close_engine(engine)
-    stale = [r for r in rows if r.get('covered_path_exists') is False]
-    return {**report, 'filters': rows, 'problems': problems, 'expected_count': len(wfp.OWNED_FILTERS),
-            'verified_count': len(rows), 'passed': not problems,
-            'status': wfp.Inspection.OWNED_FILTERS_VERIFIED if not problems else wfp.Inspection.OWNED_FILTERS_INCOMPLETE,
-            'filters_covering_missing_binaries': [{'target': r['target'], 'family': r['family'], 'covered_path': r['covered_path']} for r in stale]}

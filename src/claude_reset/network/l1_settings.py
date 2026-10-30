@@ -4,9 +4,11 @@ Only exact values are recognised: the three proxy variables pointing at the loca
 installed runner path. Anything else in those settings still needs review.
 """
 import os
-from .. import config
-from .. import layout
+
+from .. import config, layout
 from ..model.records import exact
+
+__all__ = ['OWNED_ENV', 'owned_launch_settings', 'runner_path']
 
 OWNED_ENV = (*((name, config.RELAY_URL) for name in config.PROXY_VARIABLES), ('NO_PROXY', config.NO_PROXY))
 

@@ -5,8 +5,9 @@ A kind is the image name Windows reports for a process, with its case: Claude De
 processes started by Claude Code as 'claude-child' and the dedicated Chrome as 'chrome-managed'.
 """
 from __future__ import annotations
-from enum import StrEnum
+
 from collections.abc import Iterable
+from enum import StrEnum
 from types import MappingProxyType
 
 __all__ = ['Component', 'ProcessKind', 'COMPONENT_PROCESSES', 'CLOSABLE_APPS', 'CLAUDE_PROCESSES', 'CHROME_IMAGE',

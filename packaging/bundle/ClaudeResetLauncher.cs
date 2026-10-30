@@ -25,7 +25,7 @@ static class ClaudeResetLauncher
             string version = File.ReadAllText(pointer).Trim();
             if (!System.Text.RegularExpressions.Regex.IsMatch(version, @"^app-[0-9A-Za-z.\-]+$"))
             {
-                MessageBox.Show(L.T("Файл версии повреждён. Установите ClaudeReset заново.", "The version file is damaged. Install ClaudeReset again."), "ClaudeReset",
+                MessageBox.Show(L.T("Файл версии повреждён. Установите " + Product.Name + " заново.", "The version file is damaged. Install " + Product.Name + " again."), Product.Name,
                                 MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
@@ -35,7 +35,7 @@ static class ClaudeResetLauncher
         string launcher = Path.Combine(root, "src", "launcher.py");
         if (!File.Exists(python) || !File.Exists(launcher))
         {
-            MessageBox.Show(L.T("Файлы программы не найдены. Установите ClaudeReset заново.", "The program files were not found. Install ClaudeReset again."), "ClaudeReset",
+            MessageBox.Show(L.T("Файлы программы не найдены. Установите " + Product.Name + " заново.", "The program files were not found. Install " + Product.Name + " again."), Product.Name,
                             MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
@@ -53,7 +53,7 @@ static class ClaudeResetLauncher
         }
         catch (Exception)
         {
-            MessageBox.Show(L.T("Не удалось запустить ClaudeReset. Установите программу заново.", "ClaudeReset could not start. Install the program again."), "ClaudeReset",
+            MessageBox.Show(L.T("Не удалось запустить " + Product.Name + ". Установите программу заново.", Product.Name + " could not start. Install the program again."), Product.Name,
                             MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }

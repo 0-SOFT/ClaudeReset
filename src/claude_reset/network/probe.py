@@ -4,14 +4,14 @@ Drafts of a proxy and the controller take a Probe; tests give them a scripted on
 """
 from __future__ import annotations
 
-from . import brokered_dns, connections, remote_backend
 from ..backend import location as backend_location
+from . import brokered_dns, connections, remote_backend
 
 __all__ = ['Probe']
 
 
 class Probe:
-    """The network checks of a proxy; each one is the same call the program made before it had a Probe."""
+    """The network checks of a proxy, each the same call the program made before: the port tests replace."""
 
     def reachable(self, profile: dict) -> dict:
         return remote_backend.reachable(profile)

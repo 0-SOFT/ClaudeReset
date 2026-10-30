@@ -1,9 +1,12 @@
 """No native BFE calls: session close must still run after an abort failure."""
 from ctypes import wintypes as W
+
 import pytest
+from wfp_fakes import fake
+
 from claude_reset.network.strict_wfp import Engine
 from claude_reset.safeio import SafetyError
-from wfp_fakes import fake
+
 
 @pytest.mark.parametrize('abort_fail',[False,True])
 @pytest.mark.parametrize('close_fail',[False,True])

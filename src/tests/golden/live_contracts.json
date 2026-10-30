@@ -33,9 +33,6 @@
     "l1_revoke",
     "l1_status",
     "native_selftest",
-    "network_guard_filters",
-    "network_guard_launch",
-    "network_guard_probe",
     "network_guard_status",
     "privacy_audit",
     "record_verification",
@@ -573,48 +570,6 @@
     "choices": null,
     "const": "True",
     "default": "False",
-    "dest": "network_guard_filters",
-    "hidden": false,
-    "nargs": 0,
-    "options": [
-     "--network-guard-filters"
-    ],
-    "type": null
-   },
-   {
-    "action": "_StoreAction",
-    "choices": [
-     "chrome",
-     "vscode"
-    ],
-    "const": "None",
-    "default": "None",
-    "dest": "network_guard_launch",
-    "hidden": false,
-    "nargs": null,
-    "options": [
-     "--network-guard-launch"
-    ],
-    "type": null
-   },
-   {
-    "action": "_StoreTrueAction",
-    "choices": null,
-    "const": "True",
-    "default": "False",
-    "dest": "network_guard_probe",
-    "hidden": false,
-    "nargs": 0,
-    "options": [
-     "--network-guard-probe"
-    ],
-    "type": null
-   },
-   {
-    "action": "_StoreTrueAction",
-    "choices": null,
-    "const": "True",
-    "default": "False",
     "dest": "network_guard_status",
     "hidden": false,
     "nargs": 0,
@@ -1124,7 +1079,6 @@
    "dns_service_delegation",
    "mcp_children"
   ],
-  "gateway_profile_bytes": "{\"backend_port\":1080,\"controller_path\":\"C:\\\\Runtime\\\\ClaudeResetRuntime.exe\",\"controller_pid\":4321,\"controller_sha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"controller_start_utc_ticks\":639285408000000001,\"engine_config_path\":\"C:\\\\Tunnel\\\\config.json\",\"engine_config_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"engine_path\":\"C:\\\\Tunnel\\\\engine.exe\",\"engine_pid\":1234,\"engine_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"engine_start_utc_ticks\":639285408000000000,\"generation\":\"dddddddddddddddddddddddddddddddd\",\"listen_port\":25083,\"protocol\":\"socks5\",\"schema\":2}",
   "remote_backend": {
    "adapter": "socks5_remote_v1",
    "host": "1.1.1.1",
@@ -1332,121 +1286,11 @@
    "28613569-5e02-55c1-937c-e7d0e037cac3",
    "a7092be2-419c-515d-9f3f-b106018153a6"
   ],
-  "gateway_namespace": "6ef4230b-dc85-4fb8-9d93-34d274553a8a",
-  "gateway_sublayer": "e3e3b231-d881-5f53-8b3b-3d303858634d",
-  "owned_filters": [
-   [
-    "desktop",
-    "desktop_executable",
-    "v4",
-    "ac85b5db-bb9c-528f-9368-ee62ae314d73",
-    "9698a6e2-745c-55cd-8376-347866815c2e",
-    "ClaudeReset-Snow-Desktop-v1",
-    "app",
-    null
-   ],
-   [
-    "desktop",
-    "desktop_package",
-    "v4",
-    "1029a0c7-055c-5457-a8e1-c1e08829511e",
-    "9698a6e2-745c-55cd-8376-347866815c2e",
-    "ClaudeReset-Snow-Desktop-v1",
-    "package",
-    "Claude_pzs8sxrjxfjjc"
-   ],
-   [
-    "native_cli",
-    "vscode_cli",
-    "v4",
-    "c8201cee-3e6d-5df2-bb59-2996c2d962c3",
-    "38040a2d-be44-5264-9a3f-655d4da437da",
-    "ClaudeReset-Code-Snow-v1",
-    "app",
-    null
-   ],
-   [
-    "native_cli",
-    "standalone_cli",
-    "v4",
-    "dacf7875-acea-5186-bd37-1a1422479362",
-    "38040a2d-be44-5264-9a3f-655d4da437da",
-    "ClaudeReset-Code-Snow-v1",
-    "app",
-    null
-   ],
-   [
-    "owned_package",
-    "owned_package",
-    "v4",
-    "52072bd5-1cb8-57a6-ac3e-cb8ad496a7b3",
-    "738bb19e-a4f5-524b-a599-874d0f7e0f5d",
-    "ClaudeReset-Owned-Identity-Snow-v1",
-    "package",
-    "ClaudeReset.NetworkIsolation_79st3xwgefr0c"
-   ],
-   [
-    "desktop",
-    "desktop_executable",
-    "v6",
-    "19f10179-fcd9-58a6-b69a-5e59fa1fc770",
-    "9698a6e2-745c-55cd-8376-347866815c2e",
-    "ClaudeReset-Snow-Desktop-v1",
-    "app",
-    null
-   ],
-   [
-    "desktop",
-    "desktop_package",
-    "v6",
-    "528967b9-6b8f-58fe-9b16-effd11fce460",
-    "9698a6e2-745c-55cd-8376-347866815c2e",
-    "ClaudeReset-Snow-Desktop-v1",
-    "package",
-    "Claude_pzs8sxrjxfjjc"
-   ],
-   [
-    "native_cli",
-    "vscode_cli",
-    "v6",
-    "4400148c-e5b4-59fd-9d9c-78b66a4fbdeb",
-    "38040a2d-be44-5264-9a3f-655d4da437da",
-    "ClaudeReset-Code-Snow-v1",
-    "app",
-    null
-   ],
-   [
-    "native_cli",
-    "standalone_cli",
-    "v6",
-    "637d7e1e-5c6f-5f7d-ad9a-2deafe3b6d3e",
-    "38040a2d-be44-5264-9a3f-655d4da437da",
-    "ClaudeReset-Code-Snow-v1",
-    "app",
-    null
-   ],
-   [
-    "owned_package",
-    "owned_package",
-    "v6",
-    "82068a83-c006-5767-adeb-d67f57d98b6e",
-    "738bb19e-a4f5-524b-a599-874d0f7e0f5d",
-    "ClaudeReset-Owned-Identity-Snow-v1",
-    "package",
-    "ClaudeReset.NetworkIsolation_79st3xwgefr0c"
-   ]
-  ],
   "pinned_endpoint": "500f38c0-911e-58e1-9972-b826c8297b3a",
   "relay": [
    "b6eddfba-b83c-5380-ac52-cc3daa586ec7",
    "031438aa-5e97-511d-9332-f096fc6ff767",
    "c03b66ad-473d-5e9c-beaa-0355a7eb2f3d"
-  ],
-  "service_endpoints": [
-   "1e8ea396-0b6c-5963-a2af-4b0837c946f7",
-   "d7fd6ed7-0501-5ff9-91fc-f421392e757f",
-   "4651db91-0732-5d9e-a24e-34ee8150898f",
-   "c2648845-7a8b-55e4-bee1-ca93a4e60c63"
   ],
   "strict_layers": {
    "connect_v4": "c38d57d1-05a7-4c33-904f-7fbceee60e82",

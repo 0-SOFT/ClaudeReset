@@ -1,15 +1,19 @@
 """Run-scoped HMAC comparisons; raw identifiers never enter a report or journal."""
 from __future__ import annotations
+
 import base64
 import hashlib
 import hmac
 import secrets
 from pathlib import Path
-from ..model import jsonc
-from ..errors import SafetyError
-from ..safeio import guarded
+
 from .. import layout
+from ..errors import SafetyError
+from ..model import jsonc
 from ..model.status import Identifier
+from ..safeio import guarded
+
+__all__ = ['baseline', 'compare']
 
 
 def targets(plan, paths):

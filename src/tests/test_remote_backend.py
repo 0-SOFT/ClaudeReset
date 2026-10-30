@@ -1,10 +1,10 @@
-from loopback_only import loopback_only
 import json
 import socket
 import threading
 import types
 
 import pytest
+from loopback_only import loopback_only
 
 from claude_reset.network import remote_backend as rb
 from claude_reset.network import tunnel_transport as transport

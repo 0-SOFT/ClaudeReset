@@ -3,8 +3,7 @@ the controller task's state, and waiting for the task to go idle and the relay t
 import time
 
 from .. import config
-from . import l1_mechanism
-from ..windows import tasks
+from ..windows import tasks, tcp
 
 __all__ = ['task_state', 'wait_relay_gone', 'wait_task_idle']
 
@@ -27,7 +26,7 @@ def wait_task_idle(seconds=90, *, state=task_state, sleep=time.sleep, clock=time
 def wait_relay_gone(seconds=60, sleep=time.sleep, clock=time.monotonic):
     deadline = clock() + seconds
     while clock() < deadline:
-        if l1_mechanism.connect(config.LOOPBACK, config.RELAY_PORT, .3) != 'connected':
+        if not tcp.listening(config.LOOPBACK, config.RELAY_PORT):
             return True
         sleep(1)
     return False

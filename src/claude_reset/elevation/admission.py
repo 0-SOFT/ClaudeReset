@@ -1,13 +1,23 @@
 """One-use start permission. All grant/consume calls hold admission.lock."""
-from dataclasses import asdict
 import json
+from dataclasses import asdict
 from pathlib import Path
 
-from ..errors import SafetyError
-from ..safeio import guarded, atomic_json
 from .. import layout
-from .claims import ChildAdmissionRefused, Request, claim_matches, pending_path, receipt_identity, require_expected, require_not_revoked
+from ..errors import SafetyError
+from ..safeio import atomic_json, guarded
 from . import child_process
+from .claims import (
+    ChildAdmissionRefused,
+    Request,
+    claim_matches,
+    pending_path,
+    receipt_identity,
+    require_expected,
+    require_not_revoked,
+)
+
+__all__ = ['consume', 'grant', 'permit_path']
 
 
 def permit_path(paths):

@@ -1,8 +1,10 @@
 """Only a durable private completion can authorize post-reset observations."""
 import json
+
 import pytest
-from test_reset import paths,write
-from test_native import native_setup,key,ACCOUNT,OTHER
+from test_native import ACCOUNT, OTHER, key, native_setup
+from test_reset import paths, write
+
 from claude_reset.reset import desktop_keys as dk
 from claude_reset.safeio import SafetyError
 

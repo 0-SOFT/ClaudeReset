@@ -1,6 +1,7 @@
 """Network guard for the narrow proxy tests; applied before test bodies."""
 import ipaddress
 import socket
+
 import pytest
 
 

@@ -1,7 +1,9 @@
 """Which controller generation runs, and its close: the request is bound to the retained process."""
-from ..errors import SafetyError
 from .. import layout
+from ..errors import SafetyError
 from ..windows.process import RetainedProcess
+
+__all__ = ['close_and_wait', 'generation']
 
 
 def _identity(row, state_root):
@@ -25,8 +27,7 @@ def generation(pid):
         return process.created
 
 
-def close_and_wait(folder, read, write, requested, *, process_factory=None):
-    process_factory = process_factory or RetainedProcess
+def close_and_wait(folder, read, write, requested, *, process_factory=RetainedProcess):
     state = read(folder / layout.CONTROLLER_STATUS, folder)
     identity = _identity(state, folder.parent)
     instance, pid, created = identity[:3]

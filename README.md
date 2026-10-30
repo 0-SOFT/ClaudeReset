@@ -42,10 +42,11 @@ You need Python 3.12.
 ```
 py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-lock.txt
+.venv\Scripts\python.exe -m ruff check src tools packaging
 cd src
 ..\.venv\Scripts\python.exe -m pytest -q
 ```
 
 From source the window starts with `ClaudeReset.cmd`. `.venv\Scripts\python.exe tools\build_bundle.py --out <empty folder>` builds the installer and the portable archive.
 
-Layout: `src/claude_reset/shell.py` — the window; `reset_flow.py` and `proxy_flow.py` — the two steps; `brand.py` — the 0-soft look; `ui_text.py` and `ui_text_en.py` — the window's languages; `app.py` — specialist mode with every tool (Russian).
+Layout of `src/claude_reset`: `ui/shell.py` and `ui/pages/` — the window; `services/reset.py`, `services/proxy.py` and `services/protection.py` — the two steps and the protection; `reset/` — finding and erasing Claude's data; `network/` — proxy checks and the L1 protection; `windows/` — every call into Windows; `ui/text/` — the window's languages; `ui/expert_window.py` and `ui/expert/` — specialist mode (Russian); `cli.py` — the command line. The developer guide — layers, where each feature lives, tests and the build — is [docs/DEVELOPMENT.en.md](docs/DEVELOPMENT.en.md); how to send a change — [CONTRIBUTING.md](CONTRIBUTING.md), how to report a vulnerability — [SECURITY.md](SECURITY.md).

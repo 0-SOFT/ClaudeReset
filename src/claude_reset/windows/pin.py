@@ -1,19 +1,20 @@
 """File handles that deny others: pinned inputs of a service generation, guarded reads, an exclusive lock."""
 from __future__ import annotations
-from collections.abc import Iterator
-from contextlib import contextmanager
+
 import ctypes as C
-from ctypes import wintypes as W
 import hashlib
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
+from ctypes import wintypes as W
 from pathlib import Path
 from typing import BinaryIO
-from ..safeio import local_path
+
 from ..errors import SafetyError
-from ..safeio import guarded, local_volume
+from ..safeio import guarded, local_path, local_volume
 from .api import Library
 
-__all__ = ['ExclusiveFile', 'PinnedFile', 'locked_reader']
+__all__ = ['PinnedFile', 'locked_reader']
 
 
 class PinnedFile:
@@ -107,19 +108,3 @@ def locked_reader(path: Path, busy: str) -> Iterator[BinaryIO]:
     with os.fdopen(fd, 'rb') as stream:
         yield stream
 
-
-class ExclusiveFile:
-    """A file opened (created when missing) with no sharing: while it is held, nobody else can open it."""
-
-    def __init__(self, path: Path, busy: str) -> None:
-        self.api = Library('kernel32')
-        # GENERIC_READ | GENERIC_WRITE, no sharing, OPEN_ALWAYS, the reparse point itself.
-        self.handle = self.api.CreateFileW(str(path), 0xC0000000, 0, None, 4, 0x00200000, None)
-        if self.handle in (None, C.c_void_p(-1).value):
-            self.handle = None
-            raise SafetyError(busy)
-
-    def close(self) -> None:
-        if self.handle:
-            self.api.CloseHandle(self.handle)
-            self.handle = None

@@ -3,12 +3,14 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from claude_reset.network import extension_protection as ext, l1_settings
-from claude_reset.windows import wfp
-from claude_reset.safeio import SafetyError
-from claude_reset.network.strict_wfp import Identity, deny_rules, relay_permits
-from claude_reset import config
 from wfp_fakes import FakeSession
+
+from claude_reset import config
+from claude_reset.network import extension_protection as ext
+from claude_reset.network import l1_settings
+from claude_reset.network.strict_wfp import Identity, deny_rules, relay_permits
+from claude_reset.safeio import SafetyError
+from claude_reset.windows import wfp
 
 
 @pytest.fixture
@@ -83,8 +85,9 @@ def test_exclusion_uses_existing_receipt_before_settings(paths, monkeypatch, pas
 
 @pytest.mark.parametrize('success', [True, False])
 def test_child_exact_receipt_and_fixed_error(paths, success):
-    from claude_reset.elevation import request as uac_request
     from test_child_journal import records
+
+    from claude_reset.elevation import request as uac_request
     request = uac_request.prepare(paths, 'remove')
     def remove(p):
         if not success:

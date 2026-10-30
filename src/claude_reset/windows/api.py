@@ -5,10 +5,11 @@ with the prototype declared below. A function that is not declared cannot be rea
 its prototype here. Last-error values are kept for ctypes.get_last_error().
 
 Functions whose prototypes use a module's own structures are declared in that module's PROTOTYPES, which it passes
-to Library: fwpuclnt in wfp_session, CryptProtectData in system, the catalog functions of crypt32 in catalog,
-wintrust in authenticode. Every function is declared in exactly one table (tests/test_windows_api.py).
+to Library: fwpuclnt in wfp_session, CryptProtectData in system. Every function is declared in exactly one table
+(tests/test_windows_api.py).
 """
 from __future__ import annotations
+
 import ctypes as C
 from ctypes import wintypes as W
 from types import MappingProxyType
@@ -39,8 +40,6 @@ PROTOTYPES = MappingProxyType({
         'CreateFileW': (W.HANDLE, [W.LPCWSTR, W.DWORD, W.DWORD, PVOID, W.DWORD, W.DWORD, W.HANDLE]),
         'CreateJobObjectW': (W.HANDLE, [PVOID, W.LPCWSTR]),
         'CreateMutexW': (PVOID, [PVOID, C.c_int, C.c_wchar_p]),
-        'CreateProcessW': (W.BOOL, [W.LPCWSTR, W.LPWSTR, PVOID, PVOID, W.BOOL, W.DWORD, PVOID, W.LPCWSTR,
-                                    C.POINTER(Startup), C.POINTER(ProcessInfo)]),
         'GetCurrentPackageFamilyName': (C.c_long, [C.POINTER(C.c_uint32), C.c_wchar_p]),
         'GetDriveTypeW': (C.c_uint, [C.c_wchar_p]),
         'GetFileSizeEx': (W.BOOL, [W.HANDLE, C.POINTER(C.c_int64)]),
@@ -50,17 +49,13 @@ PROTOTYPES = MappingProxyType({
         'LocalFree': (PVOID, [PVOID]),
         'OpenProcess': (W.HANDLE, [W.DWORD, W.BOOL, W.DWORD]),
         'QueryDosDeviceW': (W.DWORD, [W.LPCWSTR, W.LPWSTR, W.DWORD]),
-        'QueryFullProcessImageNameW': (W.BOOL, [W.HANDLE, W.DWORD, W.LPWSTR, PDWORD]),
         'ReadFile': (W.BOOL, [W.HANDLE, PVOID, W.DWORD, PDWORD, PVOID]),
         'ReleaseMutex': (W.BOOL, [W.HANDLE]),
-        'ResumeThread': (W.DWORD, [W.HANDLE]),
         'SetFilePointerEx': (W.BOOL, [W.HANDLE, C.c_int64, C.POINTER(C.c_int64), W.DWORD]),
         'SetInformationJobObject': (W.BOOL, [W.HANDLE, C.c_int, PVOID, W.DWORD]),
-        'TerminateProcess': (W.BOOL, [W.HANDLE, W.UINT]),
         'WaitForSingleObject': (W.DWORD, [W.HANDLE, W.DWORD]),
     }),
     'advapi32': MappingProxyType({
-        'CloseServiceHandle': (W.BOOL, [W.HANDLE]),
         'ConvertSidToStringSidW': (W.BOOL, [PVOID, C.POINTER(W.LPWSTR)]),
         'ConvertStringSecurityDescriptorToSecurityDescriptorW': (W.BOOL,
                                                                  [W.LPCWSTR, W.DWORD, C.POINTER(PVOID), PDWORD]),
@@ -72,20 +67,7 @@ PROTOTYPES = MappingProxyType({
         'GetSecurityDescriptorOwner': (W.BOOL, [PVOID, C.POINTER(PVOID), C.POINTER(W.BOOL)]),
         'GetTokenInformation': (W.BOOL, [W.HANDLE, C.c_int, PVOID, W.DWORD, PDWORD]),
         'IsValidSid': (W.BOOL, [PVOID]),
-        'LookupAccountNameW': (W.BOOL, [W.LPCWSTR, W.LPCWSTR, PVOID, PDWORD, W.LPWSTR, PDWORD, PDWORD]),
         'OpenProcessToken': (W.BOOL, [W.HANDLE, W.DWORD, C.POINTER(W.HANDLE)]),
-        'OpenSCManagerW': (W.HANDLE, [W.LPCWSTR, W.LPCWSTR, W.DWORD]),
-        'OpenServiceW': (W.HANDLE, [W.HANDLE, W.LPCWSTR, W.DWORD]),
-        'QueryServiceConfig2W': (W.BOOL, [W.HANDLE, W.DWORD, PVOID, W.DWORD, PDWORD]),
-        'QueryServiceConfigW': (W.BOOL, [W.HANDLE, PVOID, W.DWORD, PDWORD]),
-        'QueryServiceObjectSecurity': (W.BOOL, [W.HANDLE, W.DWORD, PVOID, W.DWORD, PDWORD]),
-        'QueryServiceStatusEx': (W.BOOL, [W.HANDLE, C.c_int, PVOID, W.DWORD, PDWORD]),
-        'RegCloseKey': (W.LONG, [W.HANDLE]),
-        'RegOpenKeyExW': (W.LONG, [W.HANDLE, W.LPCWSTR, W.DWORD, W.DWORD, C.POINTER(W.HANDLE)]),
-        'StartServiceW': (W.BOOL, [W.HANDLE, W.DWORD, PVOID]),
-    }),
-    'iphlpapi': MappingProxyType({
-        'GetExtendedTcpTable': (W.DWORD, [PVOID, PDWORD, W.BOOL, W.ULONG, C.c_int, W.ULONG]),
     }),
     'ncrypt': MappingProxyType({
         'NCryptCreatePersistedKey': (C.c_long, [PVOID, C.POINTER(PVOID), C.c_wchar_p, C.c_wchar_p, C.c_uint32,

@@ -3,11 +3,11 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from test_uac_request import paths
 
+from claude_reset.elevation import claims
 from claude_reset.elevation import request as uac
 from claude_reset.network import l1_install
-from claude_reset.elevation import claims
-from test_uac_request import paths
 
 
 def records(paths):
@@ -136,24 +136,10 @@ def test_scheduler_uncertainty_survives_ignored_failure(paths, monkeypatch, fail
     assert bool(effects) == (failure != 'dispatch-write')
 
 
-@pytest.mark.parametrize('failed', [False, True])
-def test_filter_handler_records_finish_for_both_outcomes(paths, failed):
-    from claude_reset.network import legacy_guard as netguard
-    request = uac.prepare(paths, 'filters')
-    def inspect():
-        if failed:
-            raise OSError('private synthetic detail')
-        return {'passed': True}
-    result = netguard.filter_receipt(paths, request.request_id, inspect=inspect)
-    assert result['finished'] is True
-    assert [r['event'] for r in records(paths)] == ['finish']
-    assert 'private synthetic detail' not in json.dumps(records(paths))
-    assert claims.blocked(paths)
-
-
 def test_finish_write_failure_prevents_package_success_receipt(paths, monkeypatch):
-    from claude_reset.network import package_isolation as package
     from test_package_isolation import FAMILY, FULL, Windows
+
+    from claude_reset.network import package_isolation as package
     request = uac.prepare(paths, 'package-register')
     monkeypatch.setattr(uac, 'child_event', lambda *a: (_ for _ in ()).throw(OSError('disk')))
     with pytest.raises(OSError):   # the package is already registered: register only reports it
@@ -231,7 +217,7 @@ def test_second_request_inventory_failure_prevents_permit(paths, monkeypatch, af
 
     @claims.serialized('test', completed={'done'})
     def chain(p):
-        uac.prepare(p, 'filters')
+        uac.prepare(p, 'remove')
         with pytest.raises(OSError):
             uac.prepare(p, 'start')
         assert not controller_admission.permit_path(p).exists()

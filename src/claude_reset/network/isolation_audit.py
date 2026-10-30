@@ -1,20 +1,22 @@
 """Read current process tokens and Cowork presence; never authorize from a snapshot."""
 from __future__ import annotations
+
 import os
+
+from .. import config, layout
 from ..backend import location as backend_location
-from ..windows.system import ps_json
-from .. import config
-from .. import layout
+from ..errors import error_kind
 from ..model import clients
-from ..windows import packages
-from ..windows.process import compute_systems, token_facts
 from ..model.status import Network
+from ..windows import packages
+from ..windows.powershell import ps_json
+from ..windows.process import compute_systems, token_facts
+
+__all__ = ['audit', 'local_metadata_probe', 'summarize']
 
 
-def local_metadata_probe(*, run_in=None):
-    """What each package sees of this PC's network adapters; run_in runs a probe inside a package
-    (backend_location.in_package)."""
-    run_in = run_in or backend_location.in_package
+def local_metadata_probe(*, run_in=backend_location.in_package):
+    """What each package sees of this PC's network adapters; run_in runs a probe inside a package."""
     rows = []
     for package in (config.DESKTOP_PACKAGE, config.OWNED_PACKAGE):
         try:
@@ -24,7 +26,7 @@ def local_metadata_probe(*, run_in=None):
                          'location_status': value.get('location_status', 'unavailable'),
                          'non_loopback_adapters_visible': int(count) if count.isdigit() else None})
         except Exception as exc:
-            rows.append({'identity_matches': False, 'error_type': type(exc).__name__})
+            rows.append({'identity_matches': False, 'error_type': error_kind(exc)})
     return {'packages': rows, 'network_requests': 0, 'coordinates_requested': False,
             'ip_or_mac_addresses_read': False, 'permission_prompt_requested': False,
             'settings_changed': False,

@@ -4,12 +4,12 @@ import subprocess
 from types import SimpleNamespace
 
 import pytest
-
-from claude_reset.elevation import request as uac
-from claude_reset.elevation import claims
-from claude_reset.network import autostart, controller, package_isolation, legacy_guard as netguard
-from scripted import Scripted
 from cli_env import folders
+from scripted import Scripted
+
+from claude_reset.elevation import claims
+from claude_reset.elevation import request as uac
+from claude_reset.network import autostart, controller, package_isolation
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ def test_foreign_child_cannot_consume_valid_request(paths, mismatch):
     other = SimpleNamespace(state=paths.state.parent / 'other', local=paths.local)
     with pytest.raises(uac.SafetyError):
         uac.admit_child(other if mismatch == 'root' else paths,
-                        'filters' if mismatch == 'operation' else 'remove',
+                        'start' if mismatch == 'operation' else 'remove',
                         'f' * 32 if mismatch == 'request' else request.request_id)
     assert uac.admit_child(paths, 'remove', request.request_id)['request_id'] == request.request_id
 
@@ -106,14 +106,13 @@ def test_real_child_entry_refuses_late_request_before_body(paths, monkeypatch, o
                                                                runner=fail),
         'package-remove': lambda: package_isolation.remove(report, paths=paths, request_id=request.request_id,
                                                            runner=fail),
-        'filters': lambda: netguard.filter_receipt(paths, request.request_id, inspect=fail),
     }
     with pytest.raises(uac.SafetyError):
         entries[operation]()
     assert not report.exists()
 
 
-@pytest.mark.parametrize('operation', sorted(claims.OPERATIONS - {'start', 'filters'}))
+@pytest.mark.parametrize('operation', sorted(claims.OPERATIONS - {'start'}))
 @pytest.mark.parametrize('identity', ['omitted', None, '', 123, 'bad'])
 @pytest.mark.parametrize('claim', ['absent', 'pending', 'corrupt'])
 def test_mutating_legacy_entry_never_reaches_effect_or_overwrites_receipt(

@@ -8,14 +8,13 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
-
-from claude_reset.elevation import admission as gate
-from claude_reset.network import controller as guard
-from claude_reset.elevation import claims
-from claude_reset.elevation import request as uac
-from claude_reset.safeio import SafetyError
 from test_uac_request import paths
 
+from claude_reset.elevation import admission as gate
+from claude_reset.elevation import claims
+from claude_reset.elevation import request as uac
+from claude_reset.network import controller as guard
+from claude_reset.safeio import SafetyError
 
 CHILD = r'''
 import ctypes

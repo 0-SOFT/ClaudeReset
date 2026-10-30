@@ -3,56 +3,27 @@
 The backend task's working folder, its worker status, profile and engine configuration are read here; the
 reviewed versions of the clients the protection covers are listed here too."""
 from __future__ import annotations
-from dataclasses import dataclass
+
 import hashlib
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
-import re
-from types import MappingProxyType
-from ..errors import SafetyError
-from ..safeio import guarded, reparse
-from ..windows.system import DPAPI
-from ..model.compatibility import LEGACY_REVIEW
-from .. import config
-from .. import layout
-from ..windows import tasks
-from ..windows import packages
-from ..windows.packages import current_package, split_command_line
-from ..model.status import Network
-from ..model.notes import Note
-from ..safeio import read_json
+
+from .. import config, layout
+from ..errors import SafetyError, error_kind
+from ..model.compatibility import REVIEWED_STANDALONE_CLI
 from ..model.ids import utc_now
+from ..model.notes import Note
+from ..model.status import Network
+from ..safeio import guarded, read_json
+from ..windows import packages, tasks
+from ..windows.dpapi import DPAPI
+from ..windows.packages import current_package, split_command_line
 
-__all__ = ['BOUNDARIES', 'DEDICATED_EXTENSION', 'EDITOR_ENV', 'Guard', 'PATH_FILTERED_EXTENSION', 'PROFILE_ID',
-           'REVIEWED_DESKTOP', 'REVIEWED_LAUNCH', 'REVIEWED_STANDALONE_CLI', 'check_dedicated_editor',
-           'check_engine_and_config', 'check_listeners', 'check_proxy_config', 'check_worker', 'drift',
-           'guard_from_task', 'in_package', 'launch_executable', 'live_state', 'locate_guard', 'read_worker_state',
-           'same_path', 'sha256', 'status', 'worker_probe', 'worker_state']
-
-
-# Builds whose network and permission code was reviewed together with the guard.
-REVIEWED_DESKTOP = LEGACY_REVIEW['desktop']
-
-
-REVIEWED_LAUNCH = LEGACY_REVIEW['launch']
-
-
-REVIEWED_STANDALONE_CLI = LEGACY_REVIEW['standalone_code']
-
-
-DEDICATED_EXTENSION = LEGACY_REVIEW['dedicated_extension']
-
-
-PATH_FILTERED_EXTENSION = 'anthropic.claude-code-' + DEDICATED_EXTENSION[0] + '-win32-x64'
-
-
-PROFILE_ID = re.compile(r'[a-f0-9]{32}')
-
-
-# Claude Code settings in the dedicated editor: every proxy variable points at the backend.
-EDITOR_ENV = (*(MappingProxyType({'name': name, 'value': config.BACKEND_URL}) for name in config.PROXY_VARIABLES),
-              MappingProxyType({'name': 'NO_PROXY', 'value': config.NO_PROXY}))
+__all__ = ['BOUNDARIES', 'Guard', 'REVIEWED_STANDALONE_CLI', 'check_engine_and_config', 'check_listeners',
+           'check_proxy_config', 'check_worker', 'guard_from_task', 'in_package', 'live_state', 'locate_guard',
+           'read_worker_state', 'same_path', 'sha256', 'status', 'worker_probe', 'worker_state']
 
 
 BOUNDARIES = (
@@ -104,7 +75,7 @@ def guard_from_task(task: dict) -> Guard:
         raise SafetyError('Unexpected local proxy task actions', code='guard_task_actions')
     python = Path(actions[0].get('execute') or '')
     arguments = split_command_line(actions[0].get('arguments') or '')
-    if python.name.lower() != config.PYTHONW or len(arguments) != 1 or Path(arguments[0]).name.lower() != 'proxy_worker.py':
+    if python.name.lower() != config.PYTHONW or len(arguments) != 1 or Path(arguments[0]).name.lower() != config.BACKEND_WORKER:
         raise SafetyError('Unexpected local proxy task actions', code='guard_task_actions')
     script = Path(arguments[0])
     if not script.is_absolute():
@@ -151,7 +122,7 @@ def check_worker(guard: Guard, state: dict, live: dict) -> dict:
     profile = read_json(guard.base / layout.BACKEND_PROFILE, guard.base)
     result = {
         'state_running': state.get('state') == 'running',
-        'worker_alive': bool(worker) and str(guard.base / 'proxy_worker.py').casefold() in (worker.get('command') or '').casefold(),
+        'worker_alive': bool(worker) and str(guard.base / config.BACKEND_WORKER).casefold() in (worker.get('command') or '').casefold(),
         'engine_child_of_worker': bool(worker and engine) and engine.get('parent') == worker['pid'] and same_path(engine.get('path') or '', profile['engine_path']),
         'started_after_boot': bool(worker) and worker['created'] > boot,
     }
@@ -159,12 +130,12 @@ def check_worker(guard: Guard, state: dict, live: dict) -> dict:
     return result
 
 
-def check_engine_and_config(guard: Guard, *, crypto=None) -> dict:
+def check_engine_and_config(guard: Guard, *, crypto=DPAPI()) -> dict:
     profile = read_json(guard.base / layout.BACKEND_PROFILE, guard.base)
     engine = guarded(Path(profile['engine_path']), guard.base / 'engine')
     result = {'engine_reviewed': engine.is_file() and sha256(engine) == profile['engine_sha256'], 'proxy_url': profile.get('proxy_url') == config.BACKEND_URL}
     sealed = guarded(guard.base / layout.BACKEND_ENGINE_CONFIG, guard.base)
-    plain = (crypto or DPAPI()).decrypt(sealed.read_bytes())
+    plain = crypto.decrypt(sealed.read_bytes())
     try:
         result['config_reviewed'] = hashlib.sha256(plain).hexdigest() == profile['config_sha256']
         result.update(check_proxy_config(json.loads(plain)))
@@ -172,83 +143,6 @@ def check_engine_and_config(guard: Guard, *, crypto=None) -> dict:
         del plain
     result['passed'] = all(v for k, v in result.items() if k != 'passed')
     return result
-
-
-def check_dedicated_editor(guard: Guard) -> tuple[Path, Path]:
-    from ..model.jsonc import read as read_jsonc
-    base = guarded(guard.work / 'claude-only-editor', guard.work)
-    candidates = [d for d in base.iterdir() if PROFILE_ID.fullmatch(d.name) and (d / 'profile-manifest.json').is_file()] if base.is_dir() else []
-    if len(candidates) != 1:
-        raise SafetyError('Expected exactly one dedicated Claude editor profile', code='editor_profile_count')
-    root = guarded(candidates[0], base)
-    profile, extensions = root / 'user-data', root / 'extensions'
-    manifest = read_json(root / 'profile-manifest.json', root, limit=5_000_000)
-    version, native = DEDICATED_EXTENSION
-    folder = guarded(extensions / str(manifest.get('extension_folder')), root)
-    if manifest.get('scope') != 'claude_only' or manifest.get('ordinary_profile_copied') is not False \
-            or folder.name != f'anthropic.claude-code-{version}-win32-x64' \
-            or (manifest.get('extension_files') or {}).get('resources/native-binary/claude.exe') != native:
-        raise SafetyError('Dedicated Claude editor manifest is invalid', code='editor_manifest')
-    if sorted(p.name for p in extensions.iterdir() if p.is_dir()) != [folder.name]:
-        raise SafetyError('Unexpected extension in the dedicated Claude editor', code='editor_extension_unexpected')
-    files = {}
-    for path in [folder, *sorted(folder.rglob('*'))]:
-        if reparse(path):
-            raise SafetyError('Reparse point or symbolic link in the target path')
-        if path.is_file():
-            files[path.relative_to(folder).as_posix()] = sha256(path)
-    if files != manifest['extension_files']:
-        raise SafetyError('Reviewed extension of the dedicated Claude editor changed', code='editor_extension_changed')
-    settings = read_jsonc(profile / 'User/settings.json', root)
-    if settings.get('http.proxy') != config.BACKEND_URL or settings.get('telemetry.telemetryLevel') != 'off' \
-            or settings.get('extensions.autoUpdate') not in (False, 'off') \
-            or settings.get(config.VSCODE_ENVIRONMENT) != list(EDITOR_ENV):
-        raise SafetyError('Dedicated Claude editor settings changed', code='editor_settings_changed')
-    return profile, extensions
-
-
-def launch_executable(paths, target: str) -> Path:
-    if target == 'chrome':
-        from ..reset.new_account import chrome_executable
-        return chrome_executable(paths.local)
-    exe = paths.local / 'Programs/Microsoft VS Code/Code.exe'
-    if not exe.is_file():
-        raise SafetyError('VS Code was not found in the supported installation location', code='vscode_not_found')
-    return exe
-
-
-def drift(paths, live: dict, guard: Guard) -> list[dict]:
-    rows = []
-    desktop = live.get('desktop') or {}
-    if desktop.get('version'):
-        app = Path(desktop['location']) / 'app'
-        try:
-            current = {'version': desktop['version'], 'exe': sha256(app / 'Claude.exe'), 'asar': sha256(app / 'resources/app.asar')}
-        except OSError:
-            current = None
-        rows.append({'component': 'desktop_msix', 'drift': current != REVIEWED_DESKTOP, 'current_version': desktop['version'],
-                     'effect': Note('guard.effect.desktop')})
-    for target, digest in REVIEWED_LAUNCH.items():
-        try:
-            changed = sha256(launch_executable(paths, target)) != digest
-        except (OSError, SafetyError):
-            changed = True
-        rows.append({'component': target + '_executable', 'drift': changed,
-                     'effect': Note('guard.effect.launch')})
-    try:
-        check_dedicated_editor(guard)
-        editor_changed = False
-    except (OSError, SafetyError, ValueError, KeyError):
-        editor_changed = True
-    rows.append({'component': 'dedicated_editor_extension', 'drift': editor_changed,
-                 'effect': Note('guard.effect.editor')})
-    ordinary = sorted(p.name for p in layout.vscode_extensions(paths).glob('anthropic.claude-code-*') if p.is_dir())
-    rows.append({'component': 'ordinary_vscode_extension', 'drift': ordinary != [PATH_FILTERED_EXTENSION], 'current': ordinary,
-                 'effect': Note('guard.effect.ordinary_editor')})
-    cli = layout.standalone_cli(paths)
-    rows.append({'component': 'standalone_cli', 'drift': not cli.is_file() or sha256(cli) != REVIEWED_STANDALONE_CLI,
-                 'effect': Note('guard.effect.cli')})
-    return rows
 
 
 def status(paths) -> dict:
@@ -265,7 +159,7 @@ def status(paths) -> dict:
         try:
             return check()
         except (OSError, SafetyError, ValueError, KeyError, TypeError) as exc:
-            return {'passed': False, 'error_type': type(exc).__name__}
+            return {'passed': False, 'error_type': error_kind(exc)}
     state = worker_state(guard.base) or {}
     live = live_state([state.get('worker_pid'), state.get('engine_pid')])
     report.update(installed=True, task=guard.task, program_package=current_package())
@@ -292,8 +186,6 @@ def status(paths) -> dict:
                                 'global_proxy_variables': sorted(k for k, v in variables.items() if v)}
     if any(report['ordinary_scope'].values()):
         review.append(Note('guard.finding.shared_proxy'))
-    report['drift'] = drift(paths, live, guard)
-    review += [Note('guard.finding.component_changed', component=row['component']) for row in report['drift'] if row['drift']]
     report.update(findings=blocking + review, blocking=bool(blocking), passed=not blocking,
                   status=Network.PROTECTION_DEGRADED if blocking else Network.STATIC_CHECKS_PASSED_REVIEW_NEEDED if review else Network.STATIC_CHECKS_PASSED)
     return report

@@ -1,7 +1,9 @@
 """Compare Windows environment names without exporting or changing values."""
 from __future__ import annotations
-from ..errors import SafetyError
+
 from typing import Any
+
+from ..errors import SafetyError
 
 __all__ = ['folded']
 

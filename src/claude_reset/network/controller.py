@@ -8,34 +8,32 @@ from __future__ import annotations
 
 import msvcrt
 import os
-from pathlib import Path
 import threading
 import time
+from pathlib import Path
 
-from . import connections, controller_process, controller_status, gate_rules, l1_consent, l1_monitor
-from . import remote_backend
-from .. import config
-from .. import layout
+from .. import config, layout
 from ..backend import location as backend_location
 from ..elevation import launch
 from ..elevation import request as uac
 from ..elevation.admission import consume
 from ..elevation.claims import serialized
 from ..elevation.locks import locked
-from ..errors import SafetyError, error_info
+from ..errors import SafetyError, error_info, error_kind
+from ..model.ids import new_id, utc_now
 from ..model.status import Measurement, Network
 from ..safeio import atomic_json, read_json
 from ..windows import mutex, policy
-from ..windows.system import ps_json
+from ..windows.powershell import ps_json
 from ..windows.wfp import GUID
-from .relay import Relay
-from .strict_wfp import Engine, Identity, Rule, PERMIT, deny_rules, relay_permits
-from .tunnel_transport import TELEMETRY_SUFFIXES, ConnectRelay
-from ..model.ids import new_id, utc_now
+from . import connections, controller_process, controller_status, gate_rules, l1_consent, l1_monitor, remote_backend
 from .probe import Probe
+from .relay import Relay
+from .strict_wfp import PERMIT, Engine, Identity, Rule, deny_rules, relay_permits
+from .tunnel_transport import TELEMETRY_SUFFIXES, ConnectRelay
 
 __all__ = ['Controller', 'configure_future_clients', 'create_transport', 'elevated', 'elevated_remove',
-           'elevated_start', 'peer_is_engine', 'remove', 'request_close', 'run_admitted', 'serve', 'stamp']
+           'elevated_start', 'peer_is_engine', 'remove', 'request_close', 'run_admitted', 'serve']
 
 # One controller for the whole computer, whichever user or session starts it.
 MUTEX = 'Global\\ClaudeReset.StrictGate.v1'
@@ -74,7 +72,7 @@ def configure_future_clients(paths):
     return changes
 
 
-def serve(paths, report_path, *, request_id=None, engine=Engine, probe=None):
+def serve(paths, report_path, *, request_id=None, engine=Engine, probe=Probe()):
     """Admit one exact start before any controller effects or status overwrite."""
     folder = layout.controller(paths)
     lockfile = held = None
@@ -129,10 +127,10 @@ class Controller:
     """
 
     def __init__(self, paths: layout.Paths, report_path: Path, folder: Path, state: dict, *,
-                 engine: type = Engine, probe: Probe | None = None) -> None:
+                 engine: type = Engine, probe: Probe = Probe()) -> None:
         self.paths, self.report_path, self.folder, self.state = paths, report_path, folder, state
         # The WFP engine and the network checks: the platform's own unless a test gives doubles.
-        self.engine, self.probe = engine, probe or Probe()
+        self.engine, self.probe = engine, probe
         self.lease = self.relay = None
         self.targets = self.remote = self.saved = None
         self.guard = self.worker = None
@@ -298,7 +296,7 @@ class Controller:
                 self.watch()
         except Exception as exc:
             failed = 'blocked_error' if state.get('persistent_boundary') else 'installation_failed_protection_unknown'
-            state.update(state=failed, error_type=type(exc).__name__)
+            state.update(state=failed, error_type=error_kind(exc))
             state.setdefault('stop_reason', 'exception')
             if isinstance(exc, SafetyError):
                 state['error_reason'] = str(exc)
@@ -315,7 +313,7 @@ class Controller:
         return state
 
 
-def run_admitted(paths, report_path, folder, state, *, engine=Engine, probe=None):
+def run_admitted(paths, report_path, folder, state, *, engine=Engine, probe=Probe()):
     return Controller(paths, report_path, folder, state, engine=engine, probe=probe).run()
 
 
@@ -366,18 +364,18 @@ def request_close(paths):
             'passed': exited, 'process_exited': exited, 'filters_removed': False}
 
 
-def elevated(paths, operation, *, dispatch=None):
+def elevated(paths, operation, *, dispatch=launch.dispatch_request):
     """Carry out one elevated operation through a persisted claim and wait for its receipt.
 
-    dispatch shows the UAC prompt for the prepared request (launch.dispatch_request when not given)."""
+    dispatch shows the UAC prompt for the prepared request."""
     if operation == 'start':
         gate_rules.plan(paths)
-    return uac.execute(paths, operation, dispatch or launch.dispatch_request)
+    return uac.execute(paths, operation, dispatch)
 
 
-def elevated_start(paths, *, dispatch=None):
+def elevated_start(paths, *, dispatch=launch.dispatch_request):
     return elevated(paths, 'start', dispatch=dispatch)
 
 
-def elevated_remove(paths, *, dispatch=None):
+def elevated_remove(paths, *, dispatch=launch.dispatch_request):
     return elevated(paths, 'remove', dispatch=dispatch)

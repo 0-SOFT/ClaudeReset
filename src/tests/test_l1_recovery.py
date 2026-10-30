@@ -1,5 +1,6 @@
 import pytest
-from claude_reset.network.l1_recovery import decide, backoff
+
+from claude_reset.network.l1_recovery import backoff, decide
 
 INSTANCE = 'a' * 32
 

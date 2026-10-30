@@ -1,20 +1,25 @@
 """Bounded read-only Cowork inventory and DPAPI export; never mounts a VM disk."""
 from __future__ import annotations
+
 import hashlib
 import json
-from pathlib import Path, PurePosixPath
 import re
 import stat
-from .catalog import DESKTOP_WORK
-from ..errors import SafetyError
-from ..safeio import guarded, walk_files, fingerprint, atomic_bytes, atomic_json, remove_owned
-from ..windows.system import DPAPI
-from ..windows.pin import locked_reader
-from .execution import operation_lock
-from .desktop_keys import private_read, private_write, no_owners
+from pathlib import Path, PurePosixPath
+
 from .. import layout
-from ..model.status import Export, Reset
+from ..errors import SafetyError, error_kind
 from ..model.ids import new_id
+from ..model.status import Export, Reset
+from ..safeio import atomic_bytes, atomic_json, fingerprint, guarded, remove_owned, walk_files
+from ..windows.dpapi import DPAPI
+from ..windows.pin import locked_reader
+from .catalog import DESKTOP_WORK
+from .desktop_keys import no_owners, private_read, private_write
+from .execution import operation_lock
+
+__all__ = ['SECRET', 'category', 'create_export', 'export_all', 'inventory', 'open_extfs', 'profiles',
+           'recover_export', 'reset_exported', 'verify_cleanup_exports', 'verify_export_for_cleanup', 'work_profiles']
 
 IMAGE = 'vm_bundles/claudevm.bundle/sessiondata.vhdx'
 LIMIT_FILES = 100000
@@ -95,8 +100,8 @@ class AnonymousReader:
 
 
 def open_extfs(stream):
-    from dissect.hypervisor.disk.vhdx import VHDX
     from dissect.extfs import ExtFS
+    from dissect.hypervisor.disk.vhdx import VHDX
     from dissect.util.hash.crc32c import crc32c
     # The underlying parser does not validate these checksums itself.
     for offset, size, magic in ((65536, 4096, b'head'), (131072, 4096, b'head'),
@@ -264,7 +269,7 @@ def create_export(paths, profile, *, include_work=False):
             private_write(paths, run / layout.PLAN_FILE, plan)
             report.update(status=Export.ENCRYPTED_EXPORT_VERIFIED, memory='exported_verbatim_separate_archive')
         except Exception as exc:
-            report.update(status=Export.FAILED_OR_PARTIAL, error_type=type(exc).__name__, blockers=['Cowork export did not complete'])
+            report.update(status=Export.FAILED_OR_PARTIAL, error_type=error_kind(exc), blockers=['Cowork export did not complete'])
             atomic_json(run / layout.RESULT_FILE, report, paths.state)
             raise SafetyError('Cowork export stopped; no source data was removed') from None
         atomic_json(run / layout.RESULT_FILE, report, paths.state)
@@ -343,7 +348,7 @@ def reset_exported(paths, run_id, *, server_step_complete=False):
             atomic_json(run / layout.RESULT_FILE, report, paths.state)
             return report
         except Exception as exc:
-            report.update(status=Reset.FAILED_OR_PARTIAL, error_type=type(exc).__name__)
+            report.update(status=Reset.FAILED_OR_PARTIAL, error_type=error_kind(exc))
             atomic_json(run / layout.RESULT_FILE, report, paths.state)
             raise SafetyError('Cowork reset stopped; verified exports remain available') from None
 

@@ -2,8 +2,10 @@
 from pathlib import Path
 from types import MappingProxyType
 
-from ..errors import SafetyError
 from .. import layout
+from ..errors import SafetyError
+
+__all__ = ['DOCUMENTS', 'LICENSE_DOCUMENTS', 'ROOT', 'check_bundle', 'read_document']
 
 
 ROOT = layout.PROGRAM_DIR
@@ -23,7 +25,6 @@ LICENSE_DOCUMENTS = (
     'third_party/licenses/dissect.hypervisor-3.21/LICENSE',
     'third_party/licenses/dissect.util-3.24/COPYRIGHT',
     'third_party/licenses/dissect.util-3.24/LICENSE',
-    'third_party/licenses/Sandboxie-v1.18.8/LICENSE',
     'third_party/licenses/sing-box-1.14.4/LICENSE',
     'third_party/licenses/sing-box-1.14.4/GPL-3.0.txt',
     'third_party/licenses/Onest/OFL.txt',

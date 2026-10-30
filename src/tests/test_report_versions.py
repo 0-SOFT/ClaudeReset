@@ -1,10 +1,13 @@
 """Client-controlled version metadata must not become diagnostic report content."""
 import dataclasses
 import json
+
 import pytest
-from test_reset import paths, platform, FakeCrypto
-from claude_reset.reset.planner import build_plan
+from test_reset import FakeCrypto, paths, platform
+
 from claude_reset.reset.execution import Executor
+from claude_reset.reset.planner import build_plan
+
 
 @pytest.mark.parametrize('field', ['cli_version','extension_versions','desktop_versions'])
 def test_report_rejects_nonversion_metadata(paths,field):

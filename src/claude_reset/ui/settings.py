@@ -3,9 +3,11 @@
 Not program state: losing the file only resets the theme to "as in Windows" and the language to Russian."""
 import json
 
-from ..safeio import atomic_json
 from .. import layout
+from ..safeio import atomic_json
 from ..windows import display
+
+__all__ = ['dark_title_bar', 'language', 'location', 'resolve', 'save_language', 'save_theme', 'system_dark', 'theme']
 
 CHOICES = ('system', 'light', 'dark')
 LANGUAGES = ('ru', 'en')  # Russian by default; English is one click away
@@ -52,12 +54,10 @@ def save_language(paths, value):
     _write(paths, 'language', value)
 
 
-def system_dark(*, read=None):
-    """Windows apps theme: AppsUseLightTheme = 0 means dark. Unknown means light."""
+def system_dark(*, read=display.apps_use_dark_theme):
+    """Whether the Windows apps theme is dark; read answers it. Unknown means light."""
     try:
-        if read is None:
-            return display.apps_use_dark_theme()
-        return read() == 0
+        return bool(read())
     except (OSError, ImportError):
         return False
 
@@ -68,9 +68,9 @@ def resolve(choice, *, system=system_dark):
     return choice if choice in ('light', 'dark') else 'light'
 
 
-def dark_title_bar(window, on, *, api=None, parent=None, redraw=None):
+def dark_title_bar(window, on):
     """Title bar of this program's own window in the theme's colours (Windows 10 20H1 and later); best effort."""
     try:
-        return display.set_dark_title_bar(window.winfo_id(), on, api=api, parent=parent, redraw=redraw)
+        return display.set_dark_title_bar(window.winfo_id(), on)
     except Exception:
         return False

@@ -4,13 +4,14 @@ Modules above the platform start programs only through these functions. Subproce
 they can catch a failed or timed-out tool.
 """
 from __future__ import annotations
-from collections.abc import Callable
+
 import ctypes as C
-from ctypes import wintypes as W
 import json
 import os
-from pathlib import Path
 import subprocess
+from collections.abc import Callable
+from ctypes import wintypes as W
+from pathlib import Path
 from subprocess import SubprocessError
 
 from ..errors import SafetyError
@@ -151,8 +152,7 @@ def command_line(args: list[str]) -> str:
     return subprocess.list2cmdline(args)
 
 
-def remove_folder_later(folder: Path, *, spawn: Callable[..., object] | None = None) -> None:
+def remove_folder_later(folder: Path, *, spawn: Callable[..., object] = subprocess.Popen) -> None:
     """A detached cmd deletes the folder a few seconds after this process exits (a program cannot delete itself)."""
-    (spawn or subprocess.Popen)(['cmd.exe', '/d', '/c', f'ping -n 6 127.0.0.1 >nul & rmdir /s /q "{folder}"'],
-                                cwd=os.environ.get('SystemRoot', 'C:\\Windows'), creationflags=DETACHED | NO_WINDOW,
-                                close_fds=True)
+    spawn(['cmd.exe', '/d', '/c', f'ping -n 6 127.0.0.1 >nul & rmdir /s /q "{folder}"'],
+          cwd=os.environ.get('SystemRoot', 'C:\\Windows'), creationflags=DETACHED | NO_WINDOW, close_fds=True)

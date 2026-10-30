@@ -3,15 +3,15 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
-
-from claude_reset.network import connections, remote_backend
-from claude_reset.elevation import request as uac
-from claude_reset.elevation import claims
-from claude_reset.safeio import SafetyError
-from test_reset import paths, FakeCrypto
 from test_connections import profile as connection_profile
 from test_remote_backend import profile as remote_profile
+from test_reset import FakeCrypto, paths
+
 from claude_reset import layout
+from claude_reset.elevation import claims
+from claude_reset.elevation import request as uac
+from claude_reset.network import connections, remote_backend
+from claude_reset.safeio import SafetyError
 
 
 @pytest.fixture(params=[(connections, connection_profile, layout.CONNECTION_PROFILE),
@@ -25,7 +25,7 @@ def test_busy_profile_entry_has_no_effect(paths, entry, operation):
     module, profile, filename = entry
     module.save(paths, profile(), crypto=FakeCrypto())
     before = (paths.state / filename).read_bytes()
-    request = uac.prepare(paths, 'filters')
+    request = uac.prepare(paths, 'remove')
     claim = claims.pending_path(paths).read_bytes()
     with pytest.raises(SafetyError, match='ownership unavailable'):
         if operation == 'save':
@@ -34,7 +34,7 @@ def test_busy_profile_entry_has_no_effect(paths, entry, operation):
             module.remove(paths)
     assert (paths.state / filename).read_bytes() == before
     assert claims.pending_path(paths).read_bytes() == claim
-    assert request.operation == 'filters'
+    assert request.operation == 'remove'
 
 
 def test_nested_profile_chain_keeps_claim_and_return_contract(paths, entry):

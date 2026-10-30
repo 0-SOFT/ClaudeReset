@@ -1,8 +1,8 @@
 """Start a program elevated: Windows shows the UAC prompt and the program runs without a window."""
 from __future__ import annotations
 
-from collections.abc import Sequence
 import subprocess
+from collections.abc import Sequence
 
 from .api import Library
 

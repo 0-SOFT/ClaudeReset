@@ -1,16 +1,17 @@
 """Windows PowerShell: the one interpreter path, the one way to start it and to quote a value, two ways to run a script."""
 from __future__ import annotations
+
 import base64
 import json
 import os
-from pathlib import Path
 import subprocess
-
-from ..errors import SafetyError
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
-__all__ = ['NO_WINDOW', 'executable', 'ps_json', 'quote', 'run', 'start']
+from ..errors import SafetyError
+
+__all__ = ['NO_WINDOW', 'executable', 'ps_json', 'quote', 'run', 'run_process', 'start']
 
 NO_WINDOW = 0x08000000   # CREATE_NO_WINDOW
 STOP_ON_ERROR = '$ErrorActionPreference="Stop"; '
@@ -25,14 +26,22 @@ def quote(value: object) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def run_process(argv: list[str], **options: Any) -> subprocess.CompletedProcess:
+    """subprocess.run, looked up on each call: the default process runner of the PowerShell and scheduler calls.
+
+    Layers above the platform name it as the default of their runner parameters; they do not import subprocess."""
+    return subprocess.run(argv, **options)
+
+
 def start(arguments: list[str], *, text: bool, timeout: float,
-          runner: Callable[..., subprocess.CompletedProcess] | None = None) -> subprocess.CompletedProcess:
+          runner: Callable[..., subprocess.CompletedProcess] = run_process) -> subprocess.CompletedProcess:
     """Run PowerShell without a profile, a prompt or a window and wait for it; its output is captured."""
-    return (runner or subprocess.run)([str(executable()), '-NoProfile', '-NonInteractive', *arguments],
-                                      capture_output=True, text=text, timeout=timeout, creationflags=NO_WINDOW)
+    return runner([str(executable()), '-NoProfile', '-NonInteractive', *arguments],
+                  capture_output=True, text=text, timeout=timeout, creationflags=NO_WINDOW)
 
 
-def run(script: str, runner: Callable[..., subprocess.CompletedProcess] | None=None, timeout: float=60) -> tuple[int, str, str]:
+def run(script: str, runner: Callable[..., subprocess.CompletedProcess] = run_process,
+        timeout: float = 60) -> tuple[int, str, str]:
     """Run a script; returns (exit code, stdout, stderr trimmed to 300 characters on one line).
 
     The error text is kept because a failed registration must be explainable; callers decide what to show."""
@@ -40,7 +49,7 @@ def run(script: str, runner: Callable[..., subprocess.CompletedProcess] | None=N
     return result.returncode, (result.stdout or '').strip(), ' '.join((result.stderr or '').split())[:300]
 
 
-def ps_json(script: str) -> Any:
+def ps_json(script: str, *, runner: Callable[..., subprocess.CompletedProcess] = run_process) -> Any:
     """Run a script that prints JSON and return the parsed value (None for no output).
 
     Any failure raises one fixed message: stderr can contain user paths or secrets and is never passed on."""
@@ -48,7 +57,7 @@ def ps_json(script: str) -> Any:
         raise SafetyError('This operation requires Windows')
     encoded = base64.b64encode((STOP_ON_ERROR + script).encode('utf-16-le')).decode()
     try:
-        result = start(['-EncodedCommand', encoded], text=False, timeout=55)
+        result = start(['-EncodedCommand', encoded], text=False, timeout=55, runner=runner)
     except (subprocess.TimeoutExpired, OSError):
         raise SafetyError('Windows inspection timed out or could not start', code='windows_inspection_failed') from None
     if result.returncode:

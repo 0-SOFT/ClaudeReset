@@ -7,16 +7,16 @@ Two separate answers: `can_install` (preconditions that no install step can crea
 """
 import sys
 
-from . import connections, l1_consent, remote_backend
-
+from .. import config, layout
 from ..backend import location as backend_location
 from ..errors import SafetyError
-from .. import config
-from .. import layout
-from ..windows.system_facts import system_facts
-from ..model.status import Check, ProtectionLevel, Readiness
-from ..model.notes import Note
 from ..model.ids import utc_now
+from ..model.notes import Note
+from ..model.status import Check, ProtectionLevel, Readiness
+from ..windows.system_facts import system_facts
+from . import connections, l1_consent, remote_backend
+
+__all__ = ['check', 'collect', 'evaluate']
 
 MIN_BUILD = 22000          # Windows 11
 MIN_FREE_GB = 2.0

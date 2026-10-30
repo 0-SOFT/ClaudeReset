@@ -4,10 +4,15 @@ Format reference: kernel.org/doc/html/latest/filesystems/ext4/journal.html.
 No filesystem writes, journal repair, external journals or fast commits.
 """
 from __future__ import annotations
+
 import io
 import struct
+
 from dissect.util.hash.crc32c import crc32c
+
 from ..errors import SafetyError
+
+__all__ = ['MAGIC', 'Overlay', 'checksum', 'recovered_filesystem', 'replay_v3']
 
 MAGIC = 0xC03B3998
 LIMIT = 64 * 1024 * 1024

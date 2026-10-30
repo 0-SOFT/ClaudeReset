@@ -5,16 +5,15 @@ from __future__ import annotations
 import ipaddress
 import json
 
-from . import connections, remote_backend
-from .. import config
-from .. import layout
+from .. import config, layout
 from ..backend import location as backend_location
 from ..backend.attestation import inspect_sing_box
-from ..errors import SafetyError
+from ..errors import SafetyError, error_kind
 from ..model.notes import Note
 from ..model.status import Network
 from ..safeio import read_json
-from ..windows.system import DPAPI
+from ..windows.dpapi import DPAPI
+from . import connections, remote_backend
 from .strict_wfp import Engine, Identity, deny_rules, relay_permits
 
 __all__ = ['adopt_new_identities', 'backend', 'cli_state', 'identities', 'plan', 'probe']
@@ -61,7 +60,7 @@ def adopt_new_identities(paths, targets, lease, state):
             permanent.install(deny_rules(fresh))
         lease.install(relay_permits(fresh, config.RELAY_PORT))
     except Exception as exc:
-        state['adopt_error'] = type(exc).__name__
+        state['adopt_error'] = error_kind(exc)
         return targets
     state.pop('adopt_error', None)
     state['adopted'] = state.get('adopted', []) + [identity.value for identity in fresh]

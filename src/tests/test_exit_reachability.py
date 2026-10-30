@@ -2,6 +2,7 @@ import socket
 
 import pytest
 
+from claude_reset.model.status import Measurement
 from claude_reset.network import exit_reachability as reach
 from claude_reset.safeio import SafetyError
 
@@ -20,7 +21,7 @@ def raising(exc):
 def test_reachable_allows_blocking():
     result = reach.probe(PEER, 9444, connector=lambda *a, **k: Closed())
     assert result['status'] == 'reachable' and result['reason'] is None
-    assert reach.may_block(result)
+    assert result['status'] == Measurement.REACHABLE
 
 
 @pytest.mark.parametrize('exc,reason', [
@@ -28,7 +29,7 @@ def test_reachable_allows_blocking():
 def test_failures_never_allow_blocking(exc, reason):
     result = reach.probe(PEER, 9444, connector=raising(exc))
     assert result['status'] == 'unreachable' and result['reason'] == reason
-    assert not reach.may_block(result)
+    assert result['status'] != Measurement.REACHABLE
 
 
 def test_result_does_not_repeat_the_peer():
@@ -44,8 +45,3 @@ def test_invalid_inputs_are_rejected(address, port, timeout):
         reach.probe(address, port, timeout, connector=lambda *a, **k: Closed())
 
 
-def test_probe_spec_uses_peer_fields():
-    seen = []
-    def connector(target, timeout): seen.append(target); return Closed()
-    reach.probe_spec({'peer_address': PEER, 'peer_port': 9444}, connector=connector)
-    assert seen == [(PEER, 9444)]

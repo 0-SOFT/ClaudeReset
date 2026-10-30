@@ -3,21 +3,21 @@ from __future__ import annotations
 
 import hashlib
 import os
-from pathlib import Path
 import shutil
 import sys
 import time
+from pathlib import Path
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
-from . import controller
-from .. import config
-from .. import layout
+from .. import config, layout
+from ..elevation import launch
 from ..elevation import request as uac
 from ..errors import SafetyError, error_info
+from ..model.ids import utc_now
 from ..safeio import atomic_json
 from ..windows import tasks
-from ..model.ids import utc_now
+from . import controller
 
 __all__ = ['ASIDE', 'clear_asides', 'directory', 'elevated', 'install', 'remove', 'remove_file', 'swap_in',
            'task_definition', 'task_state', 'task_xml']
@@ -70,12 +70,11 @@ def remove_file(path):
         os.replace(path, path.with_name(path.name + ASIDE + str(int(time.time()))))
 
 
-def install(paths, report_path, *, request_id=None, scheduler=None, folder=None):
+def install(paths, report_path, *, request_id=None, scheduler=tasks.Scheduler(),
+            folder=None):   # None: directory(), the Program Files folder looked up on each call
     """Elevated: copy the frozen program into Program Files and register the logon task.
 
-    scheduler is the Task Scheduler (windows.tasks.Scheduler) and folder the program folder (directory())
-    unless given."""
-    scheduler = scheduler or tasks.Scheduler()
+    scheduler is the Task Scheduler and folder the program folder."""
     result = {'schema': 1, 'finished': False, 'utc': utc_now()}
     result.update(uac.admit_child(paths, 'autostart', request_id))
     try:
@@ -125,14 +124,14 @@ def _definition_tree(xml):
     return node(ET.fromstring(xml))
 
 
-def task_definition(expected_xml, *, scheduler=None):
+def task_definition(expected_xml, *, scheduler=tasks.Scheduler()):
     """Conservative definition snapshot, never process-exit or replay authority.
 
     Only namespace/attribute ordering and formatting whitespace are normalized.
     Scheduler-added defaults remain a mismatch until explicitly supported.
     """
     try:
-        actual = (scheduler or tasks.Scheduler()).xml(config.CONTROLLER_TASK)
+        actual = scheduler.xml(config.CONTROLLER_TASK)
         if actual is not None:
             return 'matching' if _definition_tree(actual) == _definition_tree(expected_xml) else 'different'
     except (OSError, ValueError, TypeError, RecursionError, ET.ParseError, SafetyError):
@@ -140,16 +139,16 @@ def task_definition(expected_xml, *, scheduler=None):
     return 'unknown'
 
 
-def task_state(*, scheduler=None):
+def task_state(*, scheduler=tasks.Scheduler()):
     """Exact task lookup; CLI failure and localized text never prove absence."""
-    return (scheduler or tasks.Scheduler()).lookup(config.CONTROLLER_TASK)
+    return scheduler.lookup(config.CONTROLLER_TASK)
 
 
-def remove(paths, report_path, *, request_id=None, scheduler=None, folder=None):
+def remove(paths, report_path, *, request_id=None, scheduler=tasks.Scheduler(),
+           folder=None):   # None: directory(), the Program Files folder looked up on each call
     """Elevated: unregister the logon task and delete only the program copy this feature installed.
 
     scheduler and folder as for install."""
-    scheduler = scheduler or tasks.Scheduler()
     result = {'schema': 1, 'finished': False, 'utc': utc_now()}
     result.update(uac.admit_child(paths, 'autostart-off', request_id))
     try:
@@ -179,5 +178,5 @@ def remove(paths, report_path, *, request_id=None, scheduler=None, folder=None):
     return result
 
 
-def elevated(paths, enable=True, *, dispatch=None):
+def elevated(paths, enable=True, *, dispatch=launch.dispatch_request):
     return controller.elevated(paths, 'autostart' if enable else 'autostart-off', dispatch=dispatch)

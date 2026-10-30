@@ -1,10 +1,22 @@
 """Loopback-only Snow worker. DPAPI at rest, config via stdin, no network reconfiguration."""
-from pathlib import Path
-import ctypes, hashlib, ipaddress, json, msvcrt, os, socket, subprocess, sys, time, uuid
+import ctypes
+import hashlib
+import ipaddress
+import json
+import msvcrt
+import os
+import socket
+import subprocess
+import sys
+import time
+import uuid
 from ctypes import wintypes
+from pathlib import Path
+
 BASE=Path(__file__).resolve().parent
 sys.path.insert(0,r'__CLAUDE_RESET_SRC__')  # replaced at install time
 from claude_reset.windows import DPAPI
+
 
 def atomic(path,value):
     temp=path.with_suffix('.tmp')

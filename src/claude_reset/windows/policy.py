@@ -3,8 +3,8 @@
 Which key and value the program owns is decided above this layer (config)."""
 from __future__ import annotations
 
-from collections.abc import Collection
 import winreg
+from collections.abc import Collection
 
 __all__ = ['HIVES', 'delete_string', 'holds_string', 'replace_string']
 

@@ -1,12 +1,14 @@
 import copy
-import json
 import hashlib
+import json
+
 import pytest
-from test_reset import paths, write, FakeCrypto
+from scripted import Scripted
+from test_reset import FakeCrypto, paths, write
+
 from claude_reset.reset import desktop_keys as dk
 from claude_reset.safeio import SafetyError
 from claude_reset.windows.cng import KEY_PATTERN
-from scripted import Scripted
 
 ACCOUNT = '10000000-0000-4000-8000-000000000001'
 OTHER = '20000000-0000-4000-8000-000000000002'

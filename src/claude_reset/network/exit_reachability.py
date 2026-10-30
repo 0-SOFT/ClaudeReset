@@ -5,12 +5,25 @@ timeout is only evidence while no peer-scoped filter exists, so callers run this
 before enabling restrictions and treat any non-reachable status as "do not
 block", never as permission to continue through another path.
 """
+import ipaddress
 import socket
 import time
 
-from ..backend.spec import public_address
 from ..errors import SafetyError
 from ..model.status import Measurement
+
+__all__ = ['probe', 'public_address']
+
+
+def public_address(value, *, ipv4=False):
+    try:
+        address = ipaddress.ip_address(value) if isinstance(value, str) else None
+        if (address is None or not address.is_global or str(address) != value
+                or '%' in value or (ipv4 and address.version != 4)):
+            raise ValueError()
+    except ValueError:
+        raise SafetyError('A canonical public IP address is required') from None
+    return value
 
 
 def probe(address, port, timeout=5.0, connector=socket.create_connection):
@@ -31,10 +44,3 @@ def probe(address, port, timeout=5.0, connector=socket.create_connection):
         status, reason = Measurement.UNREACHABLE, 'network-error'
     return {'status': status, 'reason': reason, 'elapsed': round(time.monotonic() - started, 2)}
 
-
-def probe_spec(spec, timeout=5.0, connector=socket.create_connection):
-    return probe(spec['peer_address'], spec['peer_port'], timeout, connector)
-
-
-def may_block(result):
-    return result.get('status') == Measurement.REACHABLE

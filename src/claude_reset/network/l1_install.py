@@ -17,20 +17,20 @@ import sys
 import time
 from pathlib import Path
 
-from . import controller, l1_check, l1_consent, package_isolation
+from .. import config, layout
 from ..elevation import launch
-from ..errors import SafetyError
-from ..elevation.claims import serialized, blocked
-from .. import config
-from .. import layout
-from ..windows import process, tasks
-from ..errors import error_info
-from ..model.status import Check, Network, Protection, ProtectionLevel
-from ..model.status import NextAction
-from .l1_common import wait_relay_gone, wait_task_idle
-from .controller_status import current_instance
+from ..elevation.claims import blocked, serialized
+from ..errors import SafetyError, error_info
 from ..model.report import OperationReport
-from . import controller_status
+from ..model.status import Check, Network, NextAction, Protection, ProtectionLevel
+from ..windows import process, tasks, tcp
+from ..windows.powershell import run_process
+from . import controller, controller_status, l1_check, l1_consent, package_isolation
+from .controller_status import current_instance
+from .l1_common import wait_relay_gone, wait_task_idle
+
+__all__ = ['BUILDS', 'Deps', 'build_executables', 'controller_kit', 'prepare_executables', 'restart', 'run',
+           'run_autostart', 'source_digest', 'start_controller', 'wait_for_relay']
 
 ROOT = layout.PROGRAM_DIR
 BUILDS = ((Path(config.CONTROLLER_EXE).stem, 'src/launcher.py', '--windowed'), (Path(config.RUNNER_EXE).stem, 'src/launcher_run.py', '--console'))
@@ -49,7 +49,7 @@ def source_digest(root=ROOT):
     return digest.hexdigest()
 
 
-def controller_kit(*, kit=None, root=ROOT):
+def controller_kit(*, kit=None, root=ROOT):   # None: the controller folder of root
     """The prebuilt controller next to the program, verified against its manifest; None when there is none.
 
     A kit built from other sources (an update without a new kit) is not used: the caller builds instead."""
@@ -71,12 +71,6 @@ def controller_kit(*, kit=None, root=ROOT):
     return kit
 
 
-def prepare_executables(out, *, kit=controller_kit, build=None):
-    """The release's prebuilt controller when present and matching, otherwise a PyInstaller build on this PC.
-    kit finds the prebuilt controller and build runs PyInstaller (build_executables)."""
-    return kit() or (build or build_executables)(out)
-
-
 def build_executables(out):
     """PyInstaller on this PC. Returns the dist folder holding ClaudeReset.exe and ClaudeResetRun.exe."""
     out.mkdir(parents=True, exist_ok=True)
@@ -86,7 +80,7 @@ def build_executables(out):
                                       '--workpath', str(out / ('build-' + name)), '--specpath', str(out / 'spec'),
                                       str(ROOT / entry)], timeout=600)
         if result.returncode:
-            raise SafetyError(f'Build of {name} failed; is PyInstaller installed (pip install -r requirements-dev.txt)?')
+            raise SafetyError(f'Build of {name} failed; is PyInstaller installed (pip install -r requirements-lock.txt)?')
     dist = out / 'dist'
     for name, _, _ in BUILDS:
         if not (dist / (name + '.exe')).is_file():
@@ -94,22 +88,29 @@ def build_executables(out):
     return dist
 
 
-def run_autostart(exe, paths, *, wait_seconds=300, sleep=time.sleep, clock=time.monotonic, dispatch=None):
+def prepare_executables(out, *, kit=controller_kit, build=build_executables):
+    """The release's prebuilt controller when present and matching, otherwise a PyInstaller build on this PC.
+    kit finds the prebuilt controller and build runs PyInstaller."""
+    return kit() or build(out)
+
+
+def run_autostart(exe, paths, *, wait_seconds=300, sleep=time.sleep, clock=time.monotonic,
+                  dispatch=launch.dispatch_request):
     """Elevate the built program with a durable claim and await only its receipt.
 
     ShellExecute may wait for the owner to answer UAC. No process timeout kills
     that interaction; the receipt deadline starts only after dispatch returns.
     Unknown and partial outcomes retain the shared claim and forbid replay.
-    dispatch shows the UAC prompt (launch.dispatch_request unless given).
+    dispatch shows the UAC prompt.
     """
     from ..elevation.request import execute
-    dispatch = dispatch or launch.dispatch_request
     return execute(paths, 'autostart',
                    lambda request: dispatch(request, executable=exe),
                    wait_seconds=wait_seconds, sleep=sleep, clock=clock)
 
 
-def start_controller(folder=None, stale=None, *, attempts=3, wait_each=45, run=None, sleep=time.sleep, clock=time.monotonic):
+def start_controller(folder=None, stale=None, *, attempts=3, wait_each=45, run=run_process, sleep=time.sleep,
+                     clock=time.monotonic):
     """Authorize one scheduler start and observe that exact request on a new instance.
 
     `stale` is the instance id of the controller that was just stopped: its last status file must not count.
@@ -119,6 +120,7 @@ def start_controller(folder=None, stale=None, *, attempts=3, wait_each=45, run=N
     from ..elevation.request import schedule
     request = schedule(folder)
     from types import SimpleNamespace
+
     from ..elevation.claims import chain
     from ..elevation.request import record_event
     owner = chain.get()
@@ -160,12 +162,10 @@ def start_controller(folder=None, stale=None, *, attempts=3, wait_each=45, run=N
         owner.uncertain = True
 
 
-def wait_for_relay(folder, stale=None, *, seconds=150, sleep=time.sleep, clock=time.monotonic, connect=None):
+def wait_for_relay(folder, stale=None, *, seconds=150, sleep=time.sleep, clock=time.monotonic, connect=tcp.connect):
     """Wait for relay_open from a controller other than `stale`. The stopped controller's own last status
     ('blocked_controller_stopped') is old news and is neither success nor failure of the new one.
-    connect probes the relay port (l1_mechanism.connect)."""
-    from . import l1_mechanism
-    connect = connect or l1_mechanism.connect
+    connect probes the relay port."""
     from ..elevation.claims import chain
     owner = chain.get()
     expected = owner.start_request if owner is not None else None
@@ -192,6 +192,7 @@ def set_extension_proxy():
 
 
 class Deps:
+    """The steps of an L1 install and restart: the port that tests replace with scripted steps."""
     check = staticmethod(l1_check.check)
     current_instance = staticmethod(current_instance)
     build = staticmethod(prepare_executables)
@@ -222,25 +223,24 @@ class Deps:
 
 
 @serialized('l1_restart', completed={Protection.RESTARTED, Protection.NOT_INSTALLED, Protection.PROXY_CONFIRMATION_REQUIRED})
-def restart(paths, *, deps=None, clock=time.monotonic, proxy_draft=None, protect_extension=None):
+def restart(paths, *, deps=Deps(), clock=time.monotonic, proxy_draft=None, protect_extension=None):
     """Restart without reinstalling; excluding extension filters requires UAC.
 
     Protected clients have no network between the stop and the new relay_open; the report says for how long.
     Starting is retried for several minutes because leaving the relay closed is the worse outcome."""
-    d = deps or Deps()
     report = {'schema': 1, 'action': 'l1_restart', 'finished': False}
     folder = layout.controller(paths)
     began = clock()
     try:
-        previous = d.current_instance(folder)
-        state = d.check(paths)
+        previous = deps.current_instance(folder)
+        state = deps.check(paths)
         checks = {c['id']: c['status'] for c in state.get('checks', [])}
         if checks.get('controller_task') != Check.OK or checks.get('controller_files') != Check.OK:
             report.update(status=Protection.NOT_INSTALLED, finished=True)
             return report
         if proxy_draft is not None and proxy_draft.expected is None:
             return dict(report, status=Protection.PROXY_CONFIRMATION_REQUIRED, finished=True)
-        if not d.stop_controller(paths):
+        if not deps.stop_controller(paths):
             report.update(status=Protection.CONTROLLER_NOT_STOPPED, finished=True)
             return report
         stopped = clock()
@@ -248,7 +248,7 @@ def restart(paths, *, deps=None, clock=time.monotonic, proxy_draft=None, protect
             proxy_draft.save(paths, confirmed=True)
             report['profile_saved'] = True
         if protect_extension is False:
-            receipt = d.exclude_extension(paths)
+            receipt = deps.exclude_extension(paths)
             if receipt.get('passed') is not True:
                 return dict(report, status=Protection.EXTENSION_EXCLUSION_FAILED, finished=True,
                             retry_blocked=receipt.get('retry_blocked') is True)
@@ -257,9 +257,9 @@ def restart(paths, *, deps=None, clock=time.monotonic, proxy_draft=None, protect
             report['extension_protection'] = 'excluded'
         if protect_extension is True:
             (folder / layout.EXTENSION_EXCLUDED_FLAG).unlink(missing_ok=True)
-            if not d.extension_proxy():
+            if not deps.extension_proxy():
                 return dict(report, status=Protection.EXTENSION_PROXY_FAILED, finished=True)
-        started = d.start(folder, previous, attempts=8)
+        started = deps.start(folder, previous, attempts=8)
         if blocked(paths):
             report.update(status=Protection.RECONCILE_REQUIRED, retry_blocked=True,
                           requires_live_verification=True, finished=True)
@@ -268,7 +268,7 @@ def restart(paths, *, deps=None, clock=time.monotonic, proxy_draft=None, protect
             report.update(status=Protection.START_FAILED, clients_without_network=True, finished=True,
                           next=NextAction.START_CONTROLLER_THEN_CHECK)
             return report
-        up, status = d.wait_relay(folder, previous)
+        up, status = deps.wait_relay(folder, previous)
         report.update(status=Protection.RESTARTED if up else Protection.RELAY_NOT_OPEN, controller_state=status.get('state'), level=status.get('level'),
                       seconds_without_relay=round(clock() - stopped, 1), seconds_total=round(clock() - began, 1), finished=True)
         if not up:
@@ -416,12 +416,11 @@ class Install:
 
 
 @serialized('l1_install', completed={Protection.INSTALLED, Protection.BLOCKED, Protection.NEEDS_BACKEND, Protection.NEEDS_CONNECTION_PROFILE})
-def run(paths, *, confirmed=False, protect_extension=None, reinstall_controller=False, deps=None, build_dir=None):
-    d = deps or Deps()
+def run(paths, *, confirmed=False, protect_extension=None, reinstall_controller=False, deps=Deps(), build_dir=None):
     report = OperationReport('l1_install')
     folder = layout.controller(paths)
     try:
-        Install(paths, d, report, folder, confirmed=confirmed, protect_extension=protect_extension,
+        Install(paths, deps, report, folder, confirmed=confirmed, protect_extension=protect_extension,
                 reinstall_controller=reinstall_controller, build_dir=build_dir).run()
     except Exception as exc:
         report.update(status=Protection.FAILED, error=error_info(exc), finished=True)

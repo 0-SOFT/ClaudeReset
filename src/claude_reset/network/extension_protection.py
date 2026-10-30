@@ -1,18 +1,19 @@
 """Exclude exact installed Claude extension binaries through the removal receipt."""
 
-from ..model import jsonc
-from . import l1_settings
+from .. import config, layout
 from ..elevation import launch
-from ..errors import SafetyError
+from ..errors import SafetyError, error_kind
+from ..model import jsonc
 from ..safeio import atomic_bytes, atomic_json, guarded
-from .strict_wfp import Engine, Identity, deny_rules, relay_permits
-from ..windows.system import DPAPI
-from .. import config
-from .. import layout
+from ..windows.dpapi import DPAPI
+from . import l1_settings
 from .l1_common import task_state
+from .strict_wfp import Engine, Identity, deny_rules, relay_permits
+
+__all__ = ['controller_idle', 'exclude', 'remove_exact_filters', 'remove_filters', 'remove_owned_settings']
 
 
-def remove_owned_settings(paths, *, crypto=None):
+def remove_owned_settings(paths, *, crypto=DPAPI()):
     path = guarded(paths.roaming / 'Code/User/settings.json', paths.roaming)
     if not path.exists():
         return
@@ -28,15 +29,19 @@ def remove_owned_settings(paths, *, crypto=None):
         return
     backup = layout.controller(paths) / 'vscode-settings-exclude-before.dpapi'
     if not backup.exists():
-        atomic_bytes(backup, (crypto or DPAPI()).encrypt(path.read_bytes()), paths.state)
+        atomic_bytes(backup, crypto.encrypt(path.read_bytes()), paths.state)
     if remaining != env:
         jsonc.set_property(path, path.parent, env_key, remaining)
     if wrapper_owned:
         jsonc.set_property(path, path.parent, wrapper_key, '')
 
 
-def remove_exact_filters(paths, *, engine_factory=Engine, idle=None):
-    idle = idle or (lambda: task_state() in ('Ready', 'Disabled', 'Missing'))
+def controller_idle():
+    """The controller task is not running: ready, disabled or missing."""
+    return task_state() in ('Ready', 'Disabled', 'Missing')
+
+
+def remove_exact_filters(paths, *, engine_factory=Engine, idle=controller_idle):
     root = guarded(layout.vscode_extensions(paths), paths.home)
     targets = []
     if root.exists():
@@ -68,28 +73,27 @@ def remove_exact_filters(paths, *, engine_factory=Engine, idle=None):
     return len(selected)
 
 
-def remove_filters(paths, report_path, *, request_id=None, remove=None):
+def remove_filters(paths, report_path, *, request_id=None, remove=remove_exact_filters):
     """Elevated child: remove the extension's filters and write the receipt; remove is remove_exact_filters."""
     from ..elevation.request import admit_child, child_event
     result = dict(schema=1, finished=False, scope='installed_vscode_extension')
     result.update(admit_child(paths, 'remove', request_id))
     try:
-        result['filters_removed'] = (remove or remove_exact_filters)(paths)
+        result['filters_removed'] = remove(paths)
         result['removed'] = True
-    except Exception:
+    except Exception as exc:
         result['removed'] = False
-        result['error'] = 'extension_filter_removal_failed'
+        result.update(error='extension_filter_removal_failed', error_type=error_kind(exc))
     result['finished'] = True
     child_event(paths, {k: result[k] for k in ('request_id', 'operation', 'state_root')}, 'finish')
     atomic_json(report_path, result, report_path.parent)
     return result
 
 
-def exclude(paths, *, dispatch=None, remove_settings=remove_owned_settings):
+def exclude(paths, *, dispatch=launch.dispatch_request, remove_settings=remove_owned_settings):
     """Leave the extension unprotected: its filters through UAC, then the project settings this program set.
-    dispatch shows the UAC prompt (launch.dispatch_request unless given)."""
+    dispatch shows the UAC prompt."""
     from ..elevation.request import execute
-    dispatch = dispatch or launch.dispatch_request
     receipt = execute(paths, 'remove', lambda request: dispatch(request, exclude_extension=True))
     if receipt.get('passed') is True:
         remove_settings(paths)

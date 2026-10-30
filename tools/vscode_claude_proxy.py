@@ -14,19 +14,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from claude_reset.model import jsonc
+from claude_reset import config, layout
 from claude_reset.layout import Paths
-from claude_reset.safeio import atomic_bytes
-from claude_reset.windows.system import DPAPI
-
-from claude_reset import config
+from claude_reset.model import jsonc
 from claude_reset.network import l1_settings
+from claude_reset.safeio import atomic_bytes
+from claude_reset.windows.dpapi import DPAPI
 
 GATE = config.RELAY_URL
 WANTED = [{'name': name, 'value': value} for name, value in l1_settings.OWNED_ENV]
-KEY = 'claudeCode.environmentVariables'
-WRAPPER_KEY = 'claudeCode.claudeProcessWrapper'
-WRAPPER = Path(os.environ.get('ProgramFiles', r'C:\Program Files')) / 'ClaudeReset-L1' / 'ClaudeResetRun.exe'
+KEY = config.VSCODE_ENVIRONMENT
+WRAPPER_KEY = config.VSCODE_WRAPPER
+WRAPPER = layout.l1_program() / config.RUNNER_EXE
 
 
 def main():
@@ -37,7 +36,8 @@ def main():
     wrapper = settings.get(WRAPPER_KEY)
     if action == 'status':
         print(json.dumps({'set': current == WANTED, 'current': current, 'wrapper': wrapper,
-                          'wrapper_set': wrapper == str(WRAPPER), 'runner_installed': WRAPPER.is_file()})); return 0
+                          'wrapper_set': wrapper == str(WRAPPER), 'runner_installed': WRAPPER.is_file()}))
+        return 0
     paths = Paths.current()
     backup = paths.state / 'strict-guard' / 'vscode-settings-before.dpapi'
     if not backup.exists():

@@ -4,16 +4,20 @@ Transport only: callers still need a Windows boundary and a lifetime-bound permi
 This module never certifies process coverage or creates firewall permissions.
 """
 from __future__ import annotations
-import ipaddress
+
 import base64
+import ipaddress
 import json
 import re
 import select
 import socket
 import time
-from . import connections
+
 from ..errors import SafetyError
+from . import connections
 from .relay import Relay
+
+__all__ = ['ConnectRelay', 'TELEMETRY_SUFFIXES', 'destination', 'is_denied', 'open_stream']
 
 
 # Vendors that receive client crash and log events; measured as destinations of Claude Desktop.

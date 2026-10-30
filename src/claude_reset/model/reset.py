@@ -1,8 +1,9 @@
 """The reset plan: the approved scope, the actions with their fingerprints, blockers and observations."""
 from __future__ import annotations
+
+import re
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-import re
 
 from .. import __version__
 from ..errors import SafetyError

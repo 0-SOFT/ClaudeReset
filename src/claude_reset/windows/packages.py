@@ -1,21 +1,22 @@
 """Code run inside an app package (the Desktop package or the program's own isolation package), and the
 package identity of this process."""
 from __future__ import annotations
+
 import base64
 import ctypes
-from ctypes import wintypes
 import json
-from pathlib import Path
 import secrets
 import tempfile
 import time
+from collections.abc import Collection, Iterable
+from ctypes import wintypes
+from pathlib import Path
+from typing import Any
 
-from .api import Library
 from ..errors import SafetyError
 from ..safeio import guarded, remove_owned
+from .api import Library
 from .powershell import executable, ps_json, quote
-from collections.abc import Collection, Iterable
-from typing import Any
 
 __all__ = ['LOCAL_METADATA_PROBE', 'WORKER_KEYS', 'WORKER_PROBE', 'bootstrap', 'current_package', 'live_state', 'run_in_package',
            'split_command_line', 'worker_probe', 'dns_probe']

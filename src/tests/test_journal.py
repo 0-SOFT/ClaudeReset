@@ -1,9 +1,11 @@
 import io
 import struct
 from types import SimpleNamespace
+
 import pytest
 from dissect.extfs import journal as jdb
-from claude_reset.reset.journal import replay_v3, Overlay, checksum, MAGIC
+
+from claude_reset.reset.journal import MAGIC, Overlay, checksum, replay_v3
 from claude_reset.safeio import SafetyError
 
 SIZE, UUID = 1024, b'0123456789abcdef'

@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 from types import SimpleNamespace
+
 import pytest
 
 spec = importlib.util.spec_from_file_location('recovery_watch', Path(__file__).resolve().parents[2] / 'tools/l1_recovery_watch.py')

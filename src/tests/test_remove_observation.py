@@ -1,16 +1,16 @@
 """Removal postconditions with fake WFP/registry and temporary receipts only."""
+import winreg
 from pathlib import Path
 from types import SimpleNamespace
-import winreg
 
 import pytest
-
-from claude_reset.network import controller as guard
-from claude_reset.elevation import request as uac
-from claude_reset.elevation import claims
-from claude_reset import config
-from claude_reset.network.strict_wfp import Engine as StrictEngine
 from wfp_fakes import fake
+
+from claude_reset import config
+from claude_reset.elevation import claims
+from claude_reset.elevation import request as uac
+from claude_reset.network import controller as guard
+from claude_reset.network.strict_wfp import Engine as StrictEngine
 
 
 @pytest.mark.parametrize('fault', [None, 'sublayer', 'filters', 'wfp-read',

@@ -1,15 +1,15 @@
 import sys
 
 import pytest
-
+from scripted import Strict
 from test_reset import paths
+
+from claude_reset import config
+from claude_reset.elevation import claims
+from claude_reset.elevation import request as uac
 from claude_reset.errors import SafetyError
 from claude_reset.network import autostart
-from claude_reset.elevation import request as uac
-from claude_reset.elevation import claims
 from claude_reset.windows import tasks
-from claude_reset import config
-from scripted import Strict
 
 
 @pytest.mark.parametrize('change, expected', [
@@ -34,7 +34,7 @@ def test_exact_definition_snapshot(change, expected):
 
 @pytest.mark.parametrize('failure', [False, True])
 def test_definition_adapter_uses_exact_fake_com_lookup(failure):
-    from claude_reset.windows.system import ps_json
+    from claude_reset.windows.powershell import ps_json
     xml = autostart.task_xml('controller.exe', 'report.json', 'fixture-user')
     fixture = '''
     function New-Object {
@@ -123,7 +123,7 @@ def test_failed_task_observation_is_unknown(error):
     ('connect', -2147024894, 'unknown'), ('folder', -2147024894, 'unknown'),
 ])
 def test_powershell_exact_lookup_with_fake_com(stage, code, expected):
-    from claude_reset.windows.system import ps_json
+    from claude_reset.windows.powershell import ps_json
     # Execute the actual adapter, replacing COM construction before it can run.
     fixture = '''
     function New-Object {

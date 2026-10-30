@@ -1,12 +1,13 @@
 """Build every actual tab using a display-free Tk substitute; never use live paths."""
-from types import SimpleNamespace
 import json
-import pytest
-from claude_reset.model.confirmation import Confirmation
+from types import SimpleNamespace
 
-from claude_reset.ui import expert_window as app
+import pytest
 from dialog_fakes import script
 from scripted import Strict
+
+from claude_reset.model.confirmation import Confirmation
+from claude_reset.ui import expert_window as app
 
 
 class Widget:
@@ -89,19 +90,24 @@ def button(label):
     return next(w for w in reversed(Widget.all) if w.options.get('text') == label)
 
 
+def document(value):
+    """A scenario result whose document is value."""
+    return SimpleNamespace(to_json=lambda: value)
+
+
 def test_diagnostics_buttons_and_export(ui, tmp_path):
     calls = []
     ui.run = lambda action, callback: callback(action())
-    ui.diagnostics = Strict(collect=lambda paths: calls.append('collect') or {'schema': 1},
-                            operation_history=lambda paths: calls.append('history') or {'rows': []},
-                            advise=lambda country: calls.append(country) or {'status': 'unsupported'},
+    ui.diagnostics = Strict(collect=lambda paths: calls.append('collect') or document({'schema': 1}),
+                            operation_history=lambda paths: calls.append('history') or document({'rows': []}),
+                            advise=lambda country: calls.append(country) or document({'status': 'unsupported'}),
                             open_settings=lambda kind: calls.append(kind))
     path = tmp_path / 'diagnostic.json'
     script(ui, asksaveasfilename=lambda **kw: str(path))
     button('Проверить и показать отчёт без секретов').options['command']()
     button('Сохранить JSON').options['command']()
     assert json.loads(path.read_text(encoding='utf-8')) == {'schema': 1}
-    ui.advisor_country.set('DE')
+    ui.diagnostics_tab.advisor_country.set('DE')
     button('Совет по языку и поясу').options['command']()
     button('Открыть настройки времени').options['command']()
     button('Открыть настройки языка').options['command']()
@@ -121,25 +127,25 @@ def test_cleanup_buttons_and_modes(ui):
                         prepare_wipe=lambda paths, mode, **kw: SimpleNamespace(blockers=(), mode=mode, credentials=()),
                         audit=lambda paths: calls.append('audit') or result)
     ui.run = lambda action, callback: callback(action())
-    ui.analyze = lambda: calls.append('reset')
+    ui.analysis_tab.analyze = lambda: calls.append('reset')
     for mode in cleanup.MODES:
-        ui.cleanup_mode.set(mode)
+        ui.cleanup_tab.cleanup_mode.set(mode)
         button('Предпросмотр и размеры').options['command']()
     button('Проверить остатки файлов').options['command']()
     assert calls == ['reset', 'wipe', 'wipe_memory', 'audit']
-    assert 'Полный нулевой остаток не подтверждён' in ui.cleanup_text.content[0]
+    assert 'Полный нулевой остаток не подтверждён' in ui.cleanup_tab.cleanup_text.content[0]
 
 
 @pytest.mark.parametrize('answer', ['СТЕРЕТЬ', 'cancel', 'changed'])
 def test_cleanup_typed_confirmation(ui, answer):
     calls = []
     plan = SimpleNamespace(id='reviewed', mode='wipe', blockers=())
-    ui.cleanup_mode.set('wipe')
-    ui.wipe_plan = plan
+    ui.cleanup_tab.cleanup_mode.set('wipe')
+    ui.cleanup_tab.wipe_plan = plan
     ui.server_done.set(True)
     def confirm(*args, **kwargs):
         if answer == 'changed':
-            ui.cleanup_mode.set('wipe_memory')
+            ui.cleanup_tab.cleanup_mode.set('wipe_memory')
             return 'СТЕРЕТЬ'
         return answer
     script(ui, askstring=confirm)
@@ -154,13 +160,13 @@ def test_cleanup_typed_confirmation(ui, answer):
 
 def test_cleanup_version_choice_requires_explicit_yes(ui):
     calls = []
-    ui.cleanup_preview = lambda: calls.append('preview')
+    ui.cleanup_tab.cleanup_preview = lambda: calls.append('preview')
     script(ui, askyesno=False)
     button('Устранить: неизвестная версия').options['command']()
-    assert not ui.cleanup_accept_unlisted and not calls
+    assert not ui.cleanup_tab.cleanup_accept_unlisted and not calls
     script(ui, askyesno=True)
     button('Устранить: неизвестная версия').options['command']()
-    assert ui.cleanup_accept_unlisted and calls == ['preview']
+    assert ui.cleanup_tab.cleanup_accept_unlisted and calls == ['preview']
 
 
 def test_json_export_matches_display_after_source_changes(ui, tmp_path):
@@ -183,7 +189,7 @@ def test_report_snapshot_survives_modal_plan_replacement(ui, tmp_path):
         ui.invalidate()
         return str(destination)
     script(ui, asksaveasfilename=choose)
-    ui.save_report()
+    ui.analysis_tab.save_report()
     assert json.loads(destination.read_text('utf-8')) == {'items': ['reviewed']}
 
 
@@ -192,10 +198,10 @@ def test_profile_window_rejects_stale_selection(ui, change):
     profiles = [SimpleNamespace(component='code', path=str(i), selected=True) for i in range(2)]
     original = SimpleNamespace(inventory=SimpleNamespace(profiles=profiles))
     ui.plan = original
-    ui.choose_profiles()
+    ui.policy_tab.choose_profiles()
     child = button('Применить выбор и пересчитать план').parent
     analyzed = []
-    ui.analyze = lambda: analyzed.append(True)
+    ui.analysis_tab.analyze = lambda: analyzed.append(True)
     if change == 'replace': ui.plan = SimpleNamespace(inventory=None)
     elif change == 'edit': profiles[1].path = 'changed'
     elif change == 'invalidate_restore':
@@ -212,7 +218,7 @@ def test_profile_window_rejects_stale_selection(ui, change):
 def test_customization_window_preserves_selection_while_busy(ui):
     calls = []
     ui.customizations = Strict(extra_entries=['first', 'second'], create_plan=lambda paths, selected: calls.append(selected))
-    ui.plan_customizations()
+    ui.policy_tab.plan_customizations()
     prepare = button('Создать архив и план без удаления')
     ui.worker = SimpleNamespace(busy=True)
     prepare.options['command']()
@@ -237,7 +243,7 @@ def test_close_protocol_refuses_busy_worker(ui):
 def test_cleanup_resolve_buttons(ui, label, method):
     calls = []
     ui.cleanup_actions = Strict(**{method: lambda *names: calls.append(method) or {'status': 'checked'}})
-    ui.cleanup_preview = lambda: calls.append('preview')
+    ui.cleanup_tab.cleanup_preview = lambda: calls.append('preview')
     ui.show_json = lambda result: calls.append(result['status'])
     ui.run = lambda work, callback: callback(work())
     script(ui, askyesno=False)
@@ -266,7 +272,7 @@ def test_export_cowork_binding(ui, status):
     ui.run = lambda work, callback: callback(work())
     ui.show_json = lambda _: None
     button('Устранить: экспорт Cowork').options['command']()
-    assert ui.cleanup_cowork_export == (('a' * 32,) if status == 'encrypted_export_verified' else None)
+    assert ui.cleanup_tab.cleanup_cowork_export == (('a' * 32,) if status == 'encrypted_export_verified' else None)
 
 
 def test_reset_word_cannot_authorize_replaced_plan(ui):
@@ -277,5 +283,5 @@ def test_reset_word_cannot_authorize_replaced_plan(ui):
         return 'СБРОСИТЬ'
     script(ui, askyesno=True, askstring=word)
     ui.run = lambda *args: pytest.fail('stale plan must not execute')
-    ui.apply()
+    ui.analysis_tab.apply()
     assert ui.messages

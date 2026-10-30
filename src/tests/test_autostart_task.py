@@ -19,6 +19,7 @@ def test_task_xml_is_well_formed_and_scoped():
 def test_autostart_requires_frozen_program(tmp_path):
     import json
     from types import SimpleNamespace
+
     from claude_reset.elevation import request as uac
     paths = SimpleNamespace(state=tmp_path, local=tmp_path / 'local')
     request = uac.prepare(paths, 'autostart')

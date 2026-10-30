@@ -6,19 +6,21 @@ from pathlib import Path
 
 import pytest
 
+from claude_reset import layout
 from claude_reset.services import diagnostics
 from claude_reset.ui import help_docs, protection_panel, proxy_flow, reset_flow, shell
 from claude_reset.ui import text as ui_text
-from claude_reset import layout
+from claude_reset.ui.pages import reset as reset_page
 from claude_reset.ui.text import gui_message
 from claude_reset.ui.text.en import EN
 
 CYR = re.compile('[А-Яа-яЁё]')
-SHELL = Path(shell.__file__).read_text(encoding='utf-8')
+# The main window: its frame (ui/shell.py) and its pages (ui/pages).
+WINDOW = [Path(shell.__file__)] + sorted(Path(shell.__file__).with_name('pages').glob('*.py'))
 
 
 def window_keys():
-    for node in ast.walk(ast.parse(SHELL)):
+    for node in (node for path in WINDOW for node in ast.walk(ast.parse(path.read_text(encoding='utf-8')))):
         name = node.func.attr if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) else \
             getattr(node.func, 'id', None) if isinstance(node, ast.Call) else None
         if name in ('tr', 'tr_text') and node.args:
@@ -30,7 +32,7 @@ def window_keys():
 def shown_by_logic():
     yield from shell.STEPS.values()
     yield shell.UAC_TEXT
-    yield from shell.OUTSIDE
+    yield from reset_page.OUTSIDE
     yield from reset_flow.BLOCKERS.values()
     yield reset_flow.UNKNOWN_BLOCKER
     yield from reset_flow.LABELS.values()
@@ -112,6 +114,7 @@ def test_every_note_has_its_text_in_both_languages():
 
 def test_a_note_is_its_code_in_json_and_its_text_when_shown():
     import json
+
     from claude_reset.model.notes import Note
     note = Note('plan.processes_open', kind='desktop')
     assert json.dumps({'blockers': [note]}) == '{"blockers": ["plan.processes_open"]}'

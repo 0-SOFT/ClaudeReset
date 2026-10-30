@@ -1,12 +1,14 @@
 """Synthetic metadata only; no Credential Manager API is called."""
 import json
+
 import pytest
-from test_reset import paths, write, platform, FakeCrypto
-from claude_reset.reset.planner import build_plan
+from test_reset import FakeCrypto, paths, platform, write
+
 from claude_reset.model.reset import Selection
-from claude_reset.reset.secure_storage import BLOCKER, VARIABLES
-from claude_reset.safeio import fingerprint, SafetyError
 from claude_reset.reset.execution import Executor
+from claude_reset.reset.planner import build_plan
+from claude_reset.reset.secure_storage import BLOCKER, VARIABLES
+from claude_reset.safeio import SafetyError, fingerprint
 
 
 @pytest.mark.parametrize('component', ['code', 'vscode'])

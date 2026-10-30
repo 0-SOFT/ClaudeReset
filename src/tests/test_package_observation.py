@@ -6,13 +6,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from test_package_isolation import FAMILY, FULL, Windows
 
-from claude_reset.network import package_isolation as pkg
-from claude_reset.elevation import request as uac
 from claude_reset.elevation import claims
+from claude_reset.elevation import request as uac
+from claude_reset.network import package_isolation as pkg
 from claude_reset.safeio import SafetyError
-from test_package_isolation import Windows, FAMILY, FULL
-
 
 ROW = f'{FAMILY}|{FULL}|{pkg.PUBLISHER}'
 
@@ -116,12 +115,3 @@ def test_register_requires_matching_postcondition(tmp_path, after):
     assert (runtime / 'identity-stub.exe').read_bytes() == before
 
 
-@pytest.mark.parametrize('error', [SafetyError('private fixture'), OSError('private fixture'),
-                                  subprocess.TimeoutExpired('private fixture', 1)])
-def test_precondition_reports_unknown_without_suggesting_registration(error):
-    from claude_reset.network import l1_mechanism as mechanism
-    def fail(*args, **kwargs):   # the package query itself fails
-        raise error
-    errors = mechanism.precondition_errors(probe=lambda *args: 'refused', runner=fail)
-    assert len(errors) == 1 and errors[0].startswith('package_state_unknown:')
-    assert 'private' not in errors[0] and '--l1-package-register' not in errors[0]

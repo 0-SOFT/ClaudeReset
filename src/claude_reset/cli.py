@@ -1,25 +1,27 @@
 """The command line: every mode the program runs without a window, and opening the windows."""
 from __future__ import annotations
+
 import argparse
 import json
 import os
-from pathlib import Path
 import sys
-from . import __version__
+from collections.abc import Callable
+from pathlib import Path
+from types import MappingProxyType
+
+from . import __version__, config, layout
+from .errors import SafetyError, error_kind
 from .layout import Paths
-from .reset.planner import build_plan
+from .model.reset import Selection
+from .model.status import Backend, Export, NextAction, Protection, Reset
 from .reset.execution import Executor, recover_memory, verify_run
-from .errors import SafetyError
+from .reset.planner import build_plan
+from .reset.policy import policy_plan
+from .reset.verification import save_evidence, template_for_run
 from .safeio import atomic_json
 from .ui.text import error_text, gui_message, render
-from .model.reset import Selection
-from .reset.policy import policy_plan
-from .reset.verification import template_for_run, save_evidence
-from . import config
-from . import layout
-from .model.status import Backend, Export, NextAction, Protection, Reset
-from collections.abc import Callable
-from types import MappingProxyType
+
+__all__ = ['NEXT_STEPS', 'explain_next', 'main']
 
 
 # The words of the next step on the command line; the operations only name the step.
@@ -178,16 +180,9 @@ def connection_mode(args: argparse.Namespace, paths: Paths) -> dict:
     return remote_backend.check_saved(paths, include_router=args.include_router_proxy)
 
 
-def legacy_guard_mode(args: argparse.Namespace, paths: Paths) -> dict:
-    if args.network_guard_status:
-        from .backend import location as backend_location
-        return backend_location.status(paths)
-    from .network import legacy_guard as netguard
-    if args.network_guard_probe:
-        return netguard.probe(paths)
-    if args.network_guard_filters:
-        return netguard.filter_receipt(paths, args.uac_request_id) if args.uac_request_id else netguard.filters()
-    return netguard.guarded_launch(paths, args.network_guard_launch)
+def backend_status_mode(args: argparse.Namespace, paths: Paths) -> dict:
+    from .backend import location as backend_location
+    return backend_location.status(paths)
 
 
 def privacy_audit_mode(args: argparse.Namespace, paths: Paths) -> dict:
@@ -309,8 +304,7 @@ MODES = (
     (('strict_guard_plan', 'strict_guard_start', 'strict_guard_status', 'strict_guard_close', 'strict_guard_probe'),
      controller_mode),
     (('connection_save', 'connection_check'), connection_mode),
-    (('network_guard_status', 'network_guard_probe', 'network_guard_filters', 'network_guard_launch'),
-     legacy_guard_mode),
+    (('network_guard_status',), backend_status_mode),
     (('privacy_audit',), privacy_audit_mode),
     (('code_extra_plan',), code_extra_plan_mode),
     (('code_extra_apply',), code_extra_apply_mode),
@@ -350,7 +344,7 @@ def run_mode(args: argparse.Namespace, handler: Callable[[argparse.Namespace, Pa
         return 2 if payload.get('blockers') or payload.get('passed') is False else 0
     except Exception as exc:
         from .elevation.claims import ChildAdmissionRefused
-        payload = {'status': Reset.FAILED_OR_PARTIAL, 'error_type': type(exc).__name__, 'ready_for_new_account': False}
+        payload = {'status': Reset.FAILED_OR_PARTIAL, 'error_type': error_kind(exc), 'ready_for_new_account': False}
         if args.report and not isinstance(exc, ChildAdmissionRefused):
             try:
                 atomic_json(args.report, payload, args.report.parent)
@@ -360,7 +354,7 @@ def run_mode(args: argparse.Namespace, handler: Callable[[argparse.Namespace, Pa
                 if sys.stderr:
                     print('Report could not be written safely', file=sys.stderr)
         if sys.stderr:
-            print(error_text(exc, 'ru') if isinstance(exc, SafetyError) else type(exc).__name__, file=sys.stderr)
+            print(error_text(exc, 'ru') if isinstance(exc, SafetyError) else error_kind(exc), file=sys.stderr)
         return 1
 
 
@@ -430,13 +424,7 @@ def _reset_options(parser, modes):
 def _network_options(parser, modes):
     """The local guard, connection profiles, the L1 controller, backend and package, the isolation audit."""
     modes.add_argument('--network-guard-status', action='store_true',
-                       help='Read-only check of the local Claude-only proxy guard; no network calls')
-    modes.add_argument('--network-guard-probe', action='store_true',
-                       help='Opt-in probe: direct TCP denied in Claude packages, HTTPS via the local proxy works')
-    modes.add_argument('--network-guard-filters', action='store_true',
-                       help='Read the owned WFP filters (run elevated); nothing is changed')
-    modes.add_argument('--network-guard-launch', choices=['chrome', 'vscode'],
-                       help='Report blocked launch: installed boundary and full release acceptance required')
+                       help='Read-only check of the local backend the L1 controller relies on; no network calls')
     modes.add_argument('--connection-save', type=Path,
                        help='Validate JSON connection profile and store it encrypted; no network changes')
     modes.add_argument('--backend-import', type=Path,
@@ -525,7 +513,7 @@ def state_mode(args: argparse.Namespace) -> int:
         return 0
     except (SafetyError, OSError) as exc:
         if sys.stderr:
-            print(error_text(exc, 'ru') if isinstance(exc, SafetyError) else type(exc).__name__, file=sys.stderr)
+            print(error_text(exc, 'ru') if isinstance(exc, SafetyError) else error_kind(exc), file=sys.stderr)
         return 1
 
 

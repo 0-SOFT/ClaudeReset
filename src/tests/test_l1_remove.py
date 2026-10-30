@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from claude_reset.network import l1_remove as rem
-from claude_reset.elevation import claims
 from claude_reset import layout
+from claude_reset.elevation import claims
+from claude_reset.network import l1_remove as rem
 
 
 def state(**changes):
@@ -153,11 +153,12 @@ def test_pending_request_blocks_removal_before_controller_close(paths):
 
 
 def test_competing_restart_cannot_stop_between_nested_receipts(paths):
+    import json
     from concurrent.futures import ThreadPoolExecutor
     from dataclasses import asdict
-    import json
-    from claude_reset.network import l1_install
+
     from claude_reset.elevation import request as uac
+    from claude_reset.network import l1_install
 
     fake = Fake()
     competitor = Fake()
@@ -211,8 +212,8 @@ def test_old_pending_blocks_before_any_effect(paths):
 
 
 def test_simultaneous_instances_only_one_reaches_first_stop(paths):
-    from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
     import threading
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
     barrier = threading.Barrier(2)
     release = threading.Event()
     first, second = Fake(), Fake()

@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from claude_reset.network import l1_install as inst
 from claude_reset import layout
 from claude_reset.elevation import claims
 from claude_reset.model.status import NextAction
+from claude_reset.network import l1_install as inst
 
 
 def state(**statuses):
@@ -268,6 +268,7 @@ def test_a_running_installed_controller_is_not_started_again(paths):
 def test_run_autostart_waits_for_exact_delayed_receipt(paths):
     import json
     from dataclasses import asdict
+
     from claude_reset.elevation import request as uac
     launched = []
     now = [0]
@@ -318,6 +319,7 @@ def test_run_autostart_missing_receipt_prevents_second_dispatch(paths):
 @pytest.mark.parametrize('published', ['relay_open', 'blocked_controller_stopped'])
 def test_scheduler_status_never_releases_claim_or_continues_mutations(paths, entry, published):
     from dataclasses import asdict
+
     from claude_reset.elevation import request as uac
     from claude_reset.safeio import SafetyError
     calls = []

@@ -1,17 +1,18 @@
 import dataclasses
 import json
-from pathlib import Path
 import sqlite3
+from pathlib import Path
+
 import pytest
-from test_reset import paths, populated, write, database, platform, FakeCrypto, apply
-from claude_reset.reset.planner import build_plan
-from claude_reset.reset.execution import recover_memory
-from claude_reset.model.reset import Selection
-from claude_reset.reset.execution import Executor, operation_lock
+from test_reset import FakeCrypto, apply, database, paths, platform, populated, write
+
 from claude_reset.model import jsonc
-from claude_reset.reset.policy import save_policy, policy_plan
+from claude_reset.model.reset import Selection
+from claude_reset.reset.execution import Executor, operation_lock, recover_memory
+from claude_reset.reset.planner import build_plan
+from claude_reset.reset.policy import policy_plan, save_policy
+from claude_reset.reset.verification import save_evidence, summarize, template
 from claude_reset.safeio import SafetyError, fingerprint, guarded
-from claude_reset.reset.verification import template, summarize, save_evidence
 
 
 def plan(paths, components=('code', 'vscode', 'chrome'), selection=None, state=None, env=None):
@@ -372,8 +373,8 @@ def test_pending_wal_is_not_ignored_or_modified_during_audit(paths):
 
 
 def test_identifier_comparisons_use_random_run_key_and_no_values(populated):
-    from claude_reset.reset.identifiers import baseline, compare
     from claude_reset.reset.execution import verify_run
+    from claude_reset.reset.identifiers import baseline, compare
     write(populated.home / '.claude.json', '{"userID":"OLD_ACCOUNT_VALUE"}')
     p = plan(populated, ('code',))
     first, second = baseline(p, populated), baseline(p, populated)
@@ -426,6 +427,7 @@ def test_windows_locked_file_stops_apply_and_keeps_archive(populated):
 def test_abrupt_process_exit_after_deletion_preserves_dpapi_memory(populated):
     import subprocess
     import sys
+
     from claude_reset.model.ids import new_id
     run_id = new_id()
     child = '''
@@ -465,6 +467,7 @@ def test_abrupt_checkpoint_exit_can_resume_without_false_completion(populated, c
     """Actual process death at durable journal boundaries, on disposable profiles only."""
     import subprocess
     import sys
+
     from claude_reset.model.ids import new_id
     run_id = new_id()
     child = '''

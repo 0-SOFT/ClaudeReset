@@ -1,6 +1,8 @@
 """What the one-button reset says: the blockers, the names and sizes of the locations. The reset is services.reset."""
 from types import MappingProxyType
 
+__all__ = ['BLOCKERS', 'LABELS', 'UNKNOWN_BLOCKER', 'shown', 'size_text']
+
 # What the window says about each blocker (services.reset.BLOCKER_KINDS says who resolves it).
 BLOCKERS = MappingProxyType({
     'processes': 'Закроет Claude Desktop и Claude Code.',
@@ -36,12 +38,11 @@ def size_text(count):
 
 
 def shown(result):
-    """A check result with what the window shows: location names and sizes, and the text of each blocker."""
-    shown = dict(result)
-    if 'rows' in result:
-        shown['rows'] = [{'label': LABELS.get(r['label'], r['label']), 'size': size_text(r['bytes']),
-                          'status': r['status']}
-                         for r in result['rows']]
-        shown['total'] = size_text(result['total_bytes'])
-    shown['blockers'] = [dict(b, text=BLOCKERS.get(b['key'], UNKNOWN_BLOCKER)) for b in result.get('blockers', [])]
+    """A check result (services.reset.CheckResult) with what the window shows: location names and sizes, and the
+    text of each blocker."""
+    shown = result.to_json()
+    shown['rows'] = [{'label': LABELS.get(r.label, r.label), 'size': size_text(r.bytes), 'status': r.status}
+                     for r in result.rows]
+    shown['total'] = size_text(result.total_bytes)
+    shown['blockers'] = [dict(b.to_json(), text=BLOCKERS.get(b.key, UNKNOWN_BLOCKER)) for b in result.blockers]
     return shown

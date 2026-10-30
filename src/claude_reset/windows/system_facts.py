@@ -1,9 +1,11 @@
 """One read-only snapshot of the Windows facts the L1 readiness check needs; it changes nothing."""
 from __future__ import annotations
-from .powershell import ps_json, quote
+
 from collections.abc import Iterable
-from typing import Any
 from pathlib import Path
+from typing import Any
+
+from .powershell import ps_json, quote
 
 __all__ = ['system_facts']
 

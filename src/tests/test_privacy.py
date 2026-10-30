@@ -1,9 +1,10 @@
 import json
+
 import pytest
 from test_reset import paths
-from claude_reset.privacy.inventory import audit, cli_settings, vscode_settings, desktop_context
+
+from claude_reset.privacy.inventory import audit, cli_settings, desktop_context, otel_configuration, vscode_settings
 from claude_reset.safeio import SafetyError
-from claude_reset.privacy.inventory import otel_configuration
 
 
 def write(root, name, obj):

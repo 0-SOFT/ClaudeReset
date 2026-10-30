@@ -11,20 +11,22 @@ import shutil
 import sys
 from pathlib import Path
 
-from ..errors import SafetyError
-from ..safeio import atomic_json
-from .. import config
-from .. import layout
-from ..windows.powershell import run as powershell
-from ..errors import error_info
-from ..model.status import Package
+from .. import config, layout
+from ..elevation import launch
+from ..errors import SafetyError, error_info
 from ..model.ids import utc_now
+from ..model.status import Package
+from ..safeio import atomic_json
+from ..windows.powershell import run as powershell
+from ..windows.powershell import run_process
+
+__all__ = ['PUBLISHER', 'STUB_SHA256', 'accepted', 'dispatch', 'installed', 'register', 'remove', 'sha256',
+           'source_directory', 'verify_sources']
 
 PUBLISHER = 'CN=ClaudeResetLocal, OID.2.25.311729368913984317654407730594956997722=1'
 MSIX_SHA256 = '2a256d50ff61c02edb15daa8564e3f9772e8e07387b2e70e34acc6c8b196d88a'
 STUB_SHA256 = '48081c14005cc8b99a43143f102b4dec709fc89e39f3eaa2954d4d637091cd6f'
 RUNTIME_NAME = 'identity-runtime'
-NO_WINDOW = 0x08000000
 
 
 def source_directory():
@@ -49,7 +51,7 @@ def verify_sources(folder):
         raise SafetyError('Packaging files differ from the pinned versions; nothing was registered')
 
 
-def installed(runner=None):
+def installed(runner=run_process):
     """Return one identity or confirmed absence; unreadable state raises.
 
     Never turn a failed query or ambiguous inventory into permission to stage
@@ -79,7 +81,10 @@ def accepted(found):
     return bool(found) and found[0] == config.OWNED_PACKAGE[0] and found[2] == PUBLISHER and found[1].startswith(config.OWNED_PACKAGE_NAME + '_')
 
 
-def register(report_path, *, folder=None, runtime=None, runner=None, paths=None, request_id=None):
+def register(report_path, *,
+             folder=None,    # None: source_directory(), which looks for the packaging files on each call
+             runtime=None,   # None: runtime_directory(), the Program Files folder looked up on each call
+             runner=run_process, paths=None, request_id=None):
     """Elevated. Idempotent: an already registered, matching package is reported and left untouched."""
     result = {'schema': 1, 'finished': False, 'action': 'register', 'utc': utc_now(),
               'developer_mode_changed': False, 'trusted_certificates_added': False}
@@ -117,7 +122,9 @@ def register(report_path, *, folder=None, runtime=None, runner=None, paths=None,
     return result
 
 
-def remove(report_path, *, runtime=None, runner=None, paths=None, request_id=None):
+def remove(report_path, *,
+           runtime=None,   # None: runtime_directory(), which this removal may also delete once empty
+           runner=run_process, paths=None, request_id=None):
     """Elevated. Removes only a package whose identity matches exactly, then its staged stub."""
     result = {'schema': 1, 'finished': False, 'action': 'remove', 'utc': utc_now()}
     from ..elevation.request import admit_child, child_event
@@ -154,14 +161,13 @@ def remove(report_path, *, runtime=None, runner=None, paths=None, request_id=Non
     return result
 
 
-def dispatch(paths, serve_flag, prefix, *, wait_seconds=240, prompt=None):
+def dispatch(paths, serve_flag, prefix, *, wait_seconds=240, prompt=launch.dispatch_request):
     """Use the shared claim and exact receipt, including inside an L1 chain.
 
-    prompt shows the UAC prompt for the prepared request (launch.dispatch_request when not given)."""
-    from ..elevation import launch, request as uac_request
+    prompt shows the UAC prompt for the prepared request."""
+    from ..elevation import request as uac_request
     operations = {'--l1-package-register-serve': 'package-register',
                   '--l1-package-remove-serve': 'package-remove'}
     if serve_flag not in operations:
         raise SafetyError('Unsupported package operation')
-    return uac_request.execute(paths, operations[serve_flag],
-                               prompt or launch.dispatch_request, wait_seconds=wait_seconds)
+    return uac_request.execute(paths, operations[serve_flag], prompt, wait_seconds=wait_seconds)

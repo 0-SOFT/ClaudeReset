@@ -6,11 +6,11 @@ import time
 import tkinter as tk
 
 import pytest
-
-from claude_reset.ui import expert_window as app
-from claude_reset.windows import system as windows
-from claude_reset.layout import Paths
 from dialog_fakes import Dialogs
+
+from claude_reset.layout import Paths
+from claude_reset.ui import expert_window as app
+from claude_reset.windows import inventory as windows
 
 # Plan v4 section 2: capability -> visible button text (substring).
 CAPABILITIES = {
@@ -133,17 +133,17 @@ def test_read_only_button_runs_without_error_dialog(window, text):
 
 def test_wizard_progress_marks_every_step_on_an_empty_profile(window):
     ui, root, shown = window
-    states = {k: v.get() for k, v in ui.wizard_states.items()}
+    states = {k: v.get() for k, v in ui.wizard_tab.wizard_states.items()}
     assert set(states.values()) == {'ещё не проверено'}
     [b for b in buttons(root.nametowidget(ui.tabs.tabs()[0])) if b.cget('text') == 'Обновить ход'][0].invoke()
     pump(root, ui)
-    states = {k: v.get() for k, v in ui.wizard_states.items()}
+    states = {k: v.get() for k, v in ui.wizard_tab.wizard_states.items()}
     assert states['server'] == states['cleanup'] == '○ не сделано'
     assert states['checks'] == '… после остальных шагов'
-    assert ui.wizard_next == 'server'
+    assert ui.wizard_tab.wizard_next == 'server'
     next_button = [b for b in buttons(root.nametowidget(ui.tabs.tabs()[0])) if b.cget('text') == 'Следующий шаг'][0]
     next_button.invoke()
-    assert root.nametowidget(ui.tabs.select()) is ui.wizard_pages['server']
+    assert root.nametowidget(ui.tabs.select()) is ui.wizard_tab.wizard_pages['server']
 
 
 def test_empty_proxy_form_explains_what_to_fix(window):

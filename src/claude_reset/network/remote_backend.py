@@ -16,17 +16,20 @@ import threading
 from pathlib import Path
 from types import MappingProxyType
 
-from . import connections, exit_reachability
-from ..backend.spec import public_address
-from ..errors import SafetyError
-from ..safeio import atomic_bytes, guarded
-from ..windows.system import DPAPI
-from ..elevation.claims import serialized, serialized_effect
 from .. import config
-from ..errors import error_info
+from ..elevation.claims import serialized, serialized_effect
+from ..errors import SafetyError, error_info, error_kind
 from ..model.jsonc import strict_loads
-from ..model.status import Backend, Measurement
 from ..model.records import RemoteProxy, exact
+from ..model.status import Backend, Measurement
+from ..safeio import atomic_bytes, guarded
+from ..windows.dpapi import DPAPI
+from . import connections, exit_reachability
+from .exit_reachability import public_address
+
+__all__ = ['ADAPTER', 'ADAPTERS', 'FILE', 'HTTP_ADAPTER', 'auth_of', 'backend_kind', 'check_saved', 'decode',
+           'handshake_test', 'install', 'load', 'make_relay', 'measure_exit', 'path_of', 'proxy_url', 'reachable',
+           'remove', 'save', 'validate']
 
 ADAPTER = 'socks5_remote_v1'
 HTTP_ADAPTER = 'http_remote_v1'
@@ -80,20 +83,20 @@ def path_of(paths):
 
 
 @serialized_effect('remote_profile_save', succeeded=lambda value: value is None)
-def save(paths, profile, *, crypto=None):
+def save(paths, profile, *, crypto=DPAPI()):
     validate(profile)
     paths.state.mkdir(parents=True, exist_ok=True)
-    atomic_bytes(path_of(paths), (crypto or DPAPI()).encrypt(json.dumps(profile, sort_keys=True).encode('utf-8')), paths.state)
+    atomic_bytes(path_of(paths), crypto.encrypt(json.dumps(profile, sort_keys=True).encode('utf-8')), paths.state)
 
 
-def load(paths, *, crypto=None):
+def load(paths, *, crypto=DPAPI()):
     """The saved profile, or None when this PC does not use a remote proxy backend."""
     path = path_of(paths)
     if not path.exists():
         return None
     if path.stat().st_size > LIMIT * 4:
         raise SafetyError('Remote proxy profile is too large')
-    return decode((crypto or DPAPI()).decrypt(path.read_bytes()))
+    return decode(crypto.decrypt(path.read_bytes()))
 
 
 @serialized_effect('remote_profile_remove', succeeded=lambda value: value is True)
@@ -122,11 +125,24 @@ def handshake_test(profile, host=config.CLAUDE_HOST, port=443):
     except SafetyError as exc:
         return {'ok': False, 'reason': str(exc)[:120]}
     except OSError as exc:
-        return {'ok': False, 'reason': 'network: ' + type(exc).__name__}
+        return {'ok': False, 'reason': 'network: ' + error_kind(exc)}
+
+
+def measure_exit(profile, *, measure=connections.measure):
+    """Measure the exit address through a short-lived relay on an ephemeral loopback port.
+
+    measure measures through a proxy URL."""
+    relay = make_relay(profile, port=0)
+    thread = threading.Thread(target=relay.serve, daemon=True)
+    thread.start()
+    try:
+        return measure(config.loopback_url(relay.port))
+    finally:
+        relay.close()
 
 
 @serialized('remote_backend_install', completed={Backend.INSTALLED, Backend.NOT_STARTED, Backend.NOT_INSTALLED}, nested=True)
-def install(paths, profile_file, *, probe=exit_reachability.probe, test=None, measure=None):
+def install(paths, profile_file, *, probe=exit_reachability.probe, test=handshake_test, measure=measure_exit):
     """Validate, check the peer, prove the login, seal the profile. No process, task, firewall rule or client is touched."""
     result = {'schema': 1, 'finished': False, 'action': 'backend_install', 'backend': 'remote_socks5', 'elevation_used': False,
               'firewall_changed': False, 'clients_changed': False, 'raw_addresses_saved': False}
@@ -141,13 +157,13 @@ def install(paths, profile_file, *, probe=exit_reachability.probe, test=None, me
         if reach['status'] != Measurement.REACHABLE:
             result.update(status=Backend.NOT_INSTALLED, reason='peer_unreachable', finished=True)
             return result
-        proof = (test or handshake_test)(profile)
+        proof = test(profile)
         result['http_login_and_connect' if profile['adapter'] == HTTP_ADAPTER else 'socks5_login_and_connect'] = proof['ok']
         if not proof['ok']:
             result.update(status=Backend.NOT_INSTALLED, reason=proof.get('reason'), finished=True)
             return result
         save(paths, profile)
-        measured = (measure or measure_exit)(profile)
+        measured = measure(profile)
         result['exit_measured'] = measured.get('status') == Measurement.MEASURED
         result['exit_address_family'] = measured.get('address_family')   # the address itself is never returned
         result['status'] = Backend.INSTALLED if result['exit_measured'] else Backend.INSTALLED_NEEDS_ATTENTION
@@ -157,24 +173,10 @@ def install(paths, profile_file, *, probe=exit_reachability.probe, test=None, me
     return result
 
 
-def measure_exit(profile, *, measure=None):
-    """Measure the exit address through a short-lived relay on an ephemeral loopback port.
-
-    measure measures through a proxy URL (connections.measure unless given)."""
-    relay = make_relay(profile, port=0)
-    thread = threading.Thread(target=relay.serve, daemon=True)
-    thread.start()
-    try:
-        return (measure or connections.measure)(config.loopback_url(relay.port))
-    finally:
-        relay.close()
-
-
-def check_saved(paths, *, include_router=False, measure_remote=measure_exit, measure_local=None):
+def check_saved(paths, *, include_router=False, measure_remote=measure_exit, measure_local=connections.measure):
     """Check the saved connection; with a saved remote proxy the exit is measured through it.
 
-    measure_remote measures through a remote proxy profile, measure_local through a proxy URL
-    (connections.measure unless given)."""
+    measure_remote measures through a remote proxy profile, measure_local through a proxy URL."""
     profile = connections.load(paths)
     if profile is None:
         raise SafetyError('Configure a connection profile first')

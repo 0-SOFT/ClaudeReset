@@ -1,9 +1,9 @@
 [project]
 name = "claude-reset"
-version = "0.4.2"
-description = "Windows local state reset with memory preservation and explicit coverage limits"
-requires-python = ">=3.11"
-dependencies = ["dissect.hypervisor==3.21", "dissect.extfs==3.15"]
+version = "1.1.1"
+description = "Reset everything Claude keeps on a Windows PC and route Claude to the internet only through your proxy"
+requires-python = ">=3.12"
+dependencies = ["dissect.hypervisor==3.21", "dissect.extfs==3.15", "dissect.util==3.24"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

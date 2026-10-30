@@ -1,21 +1,20 @@
 """Synthetic receipts and dispatch only: never request elevation."""
 import ctypes
-from dataclasses import asdict
 import json
-from pathlib import Path
-from types import SimpleNamespace
-from concurrent.futures import ThreadPoolExecutor
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-
-from claude_reset.elevation import request as uac
-from claude_reset.elevation import claims
-from claude_reset.elevation import launch
-from claude_reset.network import autostart, controller
-from dialog_fakes import script
 from cli_env import folders
+from dialog_fakes import script
+
+from claude_reset.elevation import claims, launch
+from claude_reset.elevation import request as uac
+from claude_reset.network import autostart, controller
 
 
 @pytest.fixture
@@ -226,8 +225,8 @@ def test_dispatch_arguments_include_exact_identity_and_root(paths, monkeypatch):
 
 @pytest.mark.parametrize('consent', [False, True])
 def test_close_unknown_warns_and_preserves_replay_block(paths, consent):
-    from claude_reset.ui import expert_window as app
     from claude_reset import cli
+    from claude_reset.ui import expert_window as app
     uac.prepare(paths, 'start')
     ui = app.App.__new__(app.App)
     ui.paths = paths
@@ -339,70 +338,16 @@ def test_package_partial_keeps_claim(paths, values):
     assert uac.execute(paths, 'package-remove', dispatch)['status'] == 'reconcile_required'
     assert claims.blocked(paths)
 
-@pytest.mark.parametrize('values', [
-    {'status': 'owned_filters_verified', 'passed': True},
-    {'status': 'owned_filters_incomplete', 'passed': False},
-    {'status': 'inspection_failed', 'error_type': 'OSError', 'passed': False},
-])
-def test_filter_inspection_retains_claim_after_exact_finished_read(paths, values):
-    from claude_reset.network import legacy_guard as netguard
+
+def test_finished_child_cannot_release_outer_chain(paths):
     def dispatch(request):
-        assert request.operation == 'filters' and claims.blocked(paths)
-        write(request, read_only=True, filters_changed=False, private='secret 203.0.113.7', **values)
-        return 42
-    result = netguard.elevated_filters(paths, timeout=0, dispatch=dispatch)
-    assert result['status'] == 'inspection_finished' and result['passed'] is False
-    assert result['filters_verified'] is (values['status'] == 'owned_filters_verified')
-    assert 'secret' not in repr(result) and '203.0.113.7' not in repr(result)
-    assert result['retry_blocked'] is True
-    assert claims.blocked(paths)
-
-
-@pytest.mark.parametrize('changes', [{'request_id': 'f' * 32}, {'read_only': False},
-                                     {'finished': False}, {'filters_changed': True}])
-def test_filter_bad_receipt_retains_claim(paths, changes):
-    from claude_reset.network import legacy_guard as netguard
-    def dispatch(request):
-        values = dict(read_only=True, filters_changed=False, status='owned_filters_verified')
-        values.update(changes)
-        write(request, **values)
-        return 42
-    assert netguard.elevated_filters(paths, timeout=0, dispatch=dispatch)['status'] == 'unknown'
-    assert claims.blocked(paths)
-    with pytest.raises(FileExistsError):
-        netguard.elevated_filters(paths, timeout=0, dispatch=dispatch)
-
-
-def test_filter_timeout_keeps_late_receipt_and_denial_releases(paths):
-    from claude_reset.network import legacy_guard as netguard
-    assert netguard.elevated_filters(paths, timeout=0, dispatch=lambda _: 5)['status'] == 'denied'
-    assert not claims.blocked(paths)
-    requests = []
-    assert netguard.elevated_filters(paths, timeout=0, dispatch=lambda r: requests.append(r) or 42)['status'] == 'unknown'
-    write(requests[0], read_only=True, filters_changed=False)
-    assert uac.read_receipt(requests[0]) is not None and claims.blocked(paths)
-
-
-def test_filter_child_echoes_identity_on_failure(paths):
-    from claude_reset.network import legacy_guard as netguard
-    request = uac.prepare(paths, 'filters')
-    result = netguard.filter_receipt(paths, request.request_id,
-                                     inspect=lambda: (_ for _ in ()).throw(OSError('private secret')))
-    assert result['request_id'] == request.request_id and result['state_root'] == str(paths.state)
-    assert result['finished'] and result['read_only'] and result['filters_changed'] is False
-    assert 'private secret' not in repr(result)
-    assert uac.verdict(request, result) == 'inspection_finished'
-
-
-def test_finished_filter_child_cannot_release_outer_chain(paths):
-    def dispatch(request):
-        write(request, read_only=True, filters_changed=False)
+        write(request, state='relay_open', passed=True)
         return 42
 
     @claims.serialized('test-chain', completed={'done'})
     def chain(paths):
-        result = uac.execute(paths, 'filters', dispatch, wait_seconds=0)
-        assert result['status'] == 'inspection_finished'
+        result = uac.execute(paths, 'start', dispatch, wait_seconds=0)
+        assert result['status'] == 'reconcile_required'
         assert result['retry_blocked'] is True
         with pytest.raises(uac.SafetyError, match='ownership mismatch'):
             uac.execute(paths, 'remove', lambda _: pytest.fail('second dispatch'))
@@ -424,34 +369,11 @@ def test_finished_start_receipt_cannot_claim_live_readiness(paths):
     assert claims.blocked(paths)
 
 
-def test_filter_cli_writes_exact_receipt(paths, monkeypatch):
-    from claude_reset import cli
-    from claude_reset.network import legacy_guard as netguard
-    request = uac.prepare(paths, 'filters')
-    monkeypatch.setattr(netguard, 'filters', lambda: {'status': 'owned_filters_incomplete', 'passed': False})
-    assert cli.main(['--network-guard-filters', *folders(monkeypatch, paths),
-                     '--report', request.receipt, '--uac-request-id', request.request_id]) == 2
-    row = uac.read_receipt(request)
-    assert row and uac.verdict(request, row) == 'inspection_finished'
-
-
-def test_filter_gui_passes_selected_paths(monkeypatch):
-    from claude_reset.ui import expert_window as app
-    from claude_reset.network import legacy_guard as netguard
-    ui = app.App.__new__(app.App)
-    ui.paths = object()
-    calls = []
-    monkeypatch.setattr(netguard, 'elevated_filters', lambda paths: calls.append(paths))
-    ui.run = lambda action, callback, **kw: (calls.append(kw), action())
-    ui.guard_filters()
-    assert calls == [{'waiting_uac': True}, ui.paths]
-
-
 @pytest.mark.parametrize('entry', ['install', 'remove', 'remote'])
 def test_backend_entries_block_before_effects(paths, monkeypatch, entry):
     from claude_reset.backend import install as bi
     from claude_reset.network import remote_backend as rb
-    uac.prepare(paths, 'filters')
+    uac.prepare(paths, 'remove')
     monkeypatch.setattr(bi, 'preconditions', lambda *a, **k: pytest.fail('backend effect'))
     monkeypatch.setattr(rb, 'path_of', lambda *a: pytest.fail('profile access'))
     result = (bi.remove(paths) if entry == 'remove' else
@@ -518,7 +440,7 @@ def test_late_nested_request_damage_cannot_be_hidden_by_success(paths, damage, c
         result = uac.execute(paths, 'remove', dispatch, wait_seconds=0)
         assert result['status'] == 'unknown' and result['retry_blocked']
         with pytest.raises(uac.SafetyError, match='ownership mismatch'):
-            uac.execute(paths, 'filters', lambda request: pytest.fail('second dispatch'))
+            uac.execute(paths, 'start', lambda request: pytest.fail('second dispatch'))
         return {'status': 'done'}
 
     assert outer(paths)['retry_blocked'] is True

@@ -1,0 +1,12 @@
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.exe binary
+*.msix binary
+*.ico binary
+*.png binary
+*.ttf binary
+*.gz binary
+*.zip binary
+third_party/** -text
+src/claude_reset/assets/fonts/*.txt -text

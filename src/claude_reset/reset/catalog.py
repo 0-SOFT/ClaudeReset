@@ -1,7 +1,12 @@
 """Version-bound ownership manifests. Unknown state is never a deletion wildcard."""
 import re
-from ..model.compatibility import CLIENTS
+
 from .. import layout
+from ..model.compatibility import CLIENTS
+
+__all__ = ['AUTH_SETTINGS', 'AUTH_VARS', 'CLI_VERSIONS', 'CODE_ENTRIES', 'DESKTOP_DEVELOPER_PRESERVE',
+           'DESKTOP_JOURNAL_STATE', 'DESKTOP_JOURNAL_VERSIONS', 'DESKTOP_PRESERVE', 'DESKTOP_STATE',
+           'DESKTOP_VERSIONS', 'DESKTOP_WORK', 'EXTENSION_VERSIONS', 'code_recovery_file']
 CLI_VERSIONS = CLIENTS['code']['reset_versions']
 EXTENSION_VERSIONS = CLIENTS['vscode']['reset_versions']
 DESKTOP_VERSIONS = CLIENTS['desktop']['reset_versions']
