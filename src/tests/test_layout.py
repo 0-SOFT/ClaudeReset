@@ -64,6 +64,27 @@ def test_missing_choice_and_unknown_pointer_schema_refused(tmp_path):
     with pytest.raises(SafetyError,match='schema'): state.resolve(home,local,local)
 
 
+def test_resolved_drops_only_the_local_long_path_prefix(tmp_path):
+    from claude_reset import safeio
+    missing=tmp_path/'missing'/'file'
+    assert safeio.resolved(Path('\\\\?\\'+str(missing)))==missing.resolve()
+    assert str(safeio.resolved(missing))==str(missing.resolve())
+
+
+def test_folder_created_at_the_same_moment_is_not_refused(tmp_path):
+    """Regression: a lock file guarded while another instance creates its folder was refused as outside the root."""
+    import threading
+    from claude_reset import safeio
+    local=tmp_path/'local'; local.mkdir()
+    for attempt in range(60):
+        folder=local/f'ClaudeReset{attempt}'
+        creator=threading.Thread(target=lambda: folder.mkdir(parents=True, exist_ok=True))
+        creator.start()
+        for _ in range(20):
+            safeio.guarded(folder/'admission.lock', local)
+        creator.join()
+
+
 def test_reparse_state_is_refused(tmp_path,monkeypatch):
     home,local,redirected=layout(tmp_path)
     from claude_reset import safeio

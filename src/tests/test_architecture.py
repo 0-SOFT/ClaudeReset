@@ -49,7 +49,7 @@ AT_MOST = {
     'monkeypatch_setattr': 150,
     'monkeypatch_package': 72,
     'test_private_access': 0,
-    'lines': 20512,
+    'lines': 20523,
 }
 # Lower limits: higher is better.
 AT_LEAST = {

@@ -31,6 +31,17 @@ def reparse(path: Path) -> bool:
         return False
 
 
+def resolved(path: Path) -> Path:
+    """path.resolve() in the plain C:\\... form.
+
+    While another thread or process is creating a folder on the way, Windows realpath can return the same place
+    with the \\\\?\\ prefix; compared with a plain path it would look like a different location."""
+    text = str(Path(path).resolve())
+    if text.startswith('\\\\?\\') and not text.upper().startswith('\\\\?\\UNC\\'):
+        text = text[4:]
+    return Path(text)
+
+
 def guarded(path: Path, root: Path, *, allow_root: bool = False) -> Path:
     """Reject traversal and *all* ancestor reparse points before resolving."""
     if '..' in Path(path).parts or '..' in Path(root).parts:
@@ -53,7 +64,7 @@ def guarded(path: Path, root: Path, *, allow_root: bool = False) -> Path:
     for ancestor in (path, *path.parents, root, *root.parents):
         if reparse(ancestor):
             raise UnsafePathError('Reparse point or symbolic link in the target path')
-    if not path.resolve().is_relative_to(root.resolve()):
+    if not resolved(path).is_relative_to(resolved(root)):
         raise UnsafePathError('Resolved target is outside the approved root')
     return path
 
