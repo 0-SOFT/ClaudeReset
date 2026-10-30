@@ -8,9 +8,11 @@ import webbrowser
 import pytest
 
 from test_reset import paths, populated, platform, write
-from claude_reset.core import build_plan, recover_memory, validate_memory_bundle
-from claude_reset.discovery import Selection
-from claude_reset.execution import Executor, archive_profiles
+from claude_reset.reset.planner import build_plan
+from claude_reset.reset.execution import recover_memory
+from claude_reset.reset.core import validate_memory_bundle
+from claude_reset.model.reset import Selection
+from claude_reset.reset.execution import Executor, archive_profiles
 from claude_reset.safeio import SafetyError
 
 
@@ -78,7 +80,7 @@ def test_reset_with_network_and_process_launch_unavailable(populated, monkeypatc
             assert dict(connection.execute('SELECT key,value FROM ItemTable')) == {
                 'other.extension': 'KEEP_ME', 'history.recentlyOpenedPathsList': 'KEEP_PATH_HISTORY'}
     run = populated.state / 'runs' / plan.id
-    archive = executor._read_private(run / 'memory.dpapi')
+    archive = executor.read_private(run / 'memory.dpapi')
     assert len(archive_profiles(archive)) == 1
     for profile in archive_profiles(archive):
         for name, data in validate_memory_bundle(profile):
@@ -100,7 +102,7 @@ def test_old_queue_reappearing_at_final_check_invalidates_completion(populated, 
     plan = build_plan(populated, ('code', 'vscode', 'desktop'), platform_state=state, env={})
     assert not plan.blockers
     executor = Executor(populated, inspect=lambda: state)
-    original_check = executor._check_processes
+    original_check = executor.check_processes
     checks = 0
     def restore_at_final_check(current):
         nonlocal checks
@@ -108,7 +110,7 @@ def test_old_queue_reappearing_at_final_check_invalidates_completion(populated, 
         checks += 1
         if checks == len(plan.actions) + 1:
             write(queues[0], 'OLD_QUEUE_CANARY_DO_NOT_RESTORE')
-    monkeypatch.setattr(executor, '_check_processes', restore_at_final_check)
+    executor.check_processes = restore_at_final_check
     with pytest.raises(SafetyError, match='Apply stopped'):
         executor.apply(plan, consent_id=plan.id, server_step_complete=True)
     result = json.loads((populated.state / 'runs' / plan.id / 'result.json').read_text())

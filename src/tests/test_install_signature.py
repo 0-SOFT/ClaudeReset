@@ -3,9 +3,10 @@ import hashlib
 import struct
 from pathlib import Path
 import pytest
-from claude_reset import install_signature as sig
-from claude_reset.windows_pin import PinnedFile
+from claude_reset.windows import authenticode as sig
+from claude_reset.windows.pin import PinnedFile
 from claude_reset.safeio import SafetyError
+from scripted import Strict
 
 
 class Provider:
@@ -41,14 +42,14 @@ class Provider:
 
 
 @pytest.mark.parametrize('status', [0, 1, -2146762496, -2146885614])
-def test_zero_only_success_and_always_close(tmp_path, monkeypatch, status):
+def test_zero_only_success_and_always_close(tmp_path, status):
     path = tmp_path/'fixture.exe'; path.write_bytes(b'inert fixture')
     with PinnedFile(path) as pin:
-        api = Provider(pin, status); monkeypatch.setattr(sig, '_native', lambda: api)
+        api = Provider(pin, status)
         if status:
-            with pytest.raises(SafetyError, match='verification failed'): sig.inspect_signature(pin)
+            with pytest.raises(SafetyError, match='verification failed'): sig.inspect_signature(pin, api=api)
         else:
-            evidence = sig.inspect_signature(pin)
+            evidence = sig.inspect_signature(pin, api=api)
             assert evidence['file_sha256'] == hashlib.sha256(path.read_bytes()).hexdigest()
             assert evidence['signer_certificate_sha256'] == hashlib.sha256(api.der.raw).hexdigest()
             assert not evidence['installable'] and not evidence['release_authority_verified']
@@ -58,7 +59,7 @@ def test_zero_only_success_and_always_close(tmp_path, monkeypatch, status):
 
 
 @pytest.mark.parametrize('fault', ['missing', 'crash', 'close', 'signer_error', 'test_cert', 'length', 'short_struct'])
-def test_provider_faults_fail_closed_and_release_state(tmp_path, monkeypatch, fault):
+def test_provider_faults_fail_closed_and_release_state(tmp_path, fault):
     path = tmp_path/'fixture'; path.write_bytes(b'inert fixture')
     with PinnedFile(path) as pin:
         api = Provider(pin, missing=fault=='missing', crash=fault=='crash', close_status=int(fault=='close'))
@@ -66,16 +67,14 @@ def test_provider_faults_fail_closed_and_release_state(tmp_path, monkeypatch, fa
         if fault == 'test_cert': api.leaf.test = True
         if fault == 'length': api.cert.length = 0
         if fault == 'short_struct': api.signer.size = 0
-        monkeypatch.setattr(sig, '_native', lambda: api)
-        with pytest.raises((SafetyError, RuntimeError)): sig.inspect_signature(pin)
+        with pytest.raises((SafetyError, RuntimeError)): sig.inspect_signature(pin, api=api)
         assert api.actions == [1, 2] and pin.handle
 
 
-def test_closed_pin_does_not_load_provider(tmp_path, monkeypatch):
+def test_closed_pin_does_not_load_provider(tmp_path):
     path = tmp_path/'fixture'; path.write_bytes(b'inert')
     pin = PinnedFile(path); pin.close()
-    monkeypatch.setattr(sig, '_native', lambda: pytest.fail('closed pin reached provider'))
-    with pytest.raises(SafetyError, match='open payload pin'): sig.inspect_signature(pin)
+    with pytest.raises(SafetyError, match='open payload pin'): sig.inspect_signature(pin, api=Strict())
 
 
 def test_native_unsigned_file_refused(tmp_path):
@@ -115,31 +114,29 @@ def test_native_changed_signed_image_refused(tmp_path):
             sig.inspect_signature(pin)
 
 
-def test_catalog_digest_mismatch_never_reaches_provider(tmp_path, monkeypatch):
+def test_catalog_digest_mismatch_never_reaches_provider(tmp_path):
     path = tmp_path/'fixture'; path.write_bytes(b'inert')
     with PinnedFile(path) as pin:
         pin.sha256 = '0'*64
-        monkeypatch.setattr(sig, '_native', lambda: pytest.fail('bad digest reached provider'))
-        with pytest.raises(SafetyError, match='pinned catalog digest'): sig.inspect_signature(pin)
+        with pytest.raises(SafetyError, match='pinned catalog digest'): sig.inspect_signature(pin, api=Strict())
 
 
-def test_post_verification_digest_failure_refuses_evidence(tmp_path, monkeypatch):
+def test_post_verification_digest_failure_refuses_evidence(tmp_path):
     path = tmp_path/'fixture'; path.write_bytes(b'inert')
     with PinnedFile(path) as pin:
-        api = Provider(pin); monkeypatch.setattr(sig, '_native', lambda: api)
-        check = sig._check_digest; calls = []
+        api = Provider(pin); calls = []
         def changed_after_verify(value):
             calls.append(value)
             if len(calls) == 2: raise SafetyError('modeled input change')
-            check(value)
-        monkeypatch.setattr(sig, '_check_digest', changed_after_verify)
-        with pytest.raises(SafetyError, match='modeled input change'): sig.inspect_signature(pin)
+            sig.check_digest(value)
+        with pytest.raises(SafetyError, match='modeled input change'):
+            sig.inspect_signature(pin, api=api, check=changed_after_verify)
         assert len(calls) == 2 and api.actions == [1, 2]
 
 
 @pytest.mark.parametrize('kind',['exe','cat'])
 @pytest.mark.parametrize('hold_signed',[True,False])
-def test_native_file_trust_uses_handle_when_path_names_different_bytes(tmp_path,monkeypatch,kind,hold_signed):
+def test_native_file_trust_uses_handle_when_path_names_different_bytes(tmp_path,kind,hold_signed):
     if kind=='exe':signed=Path('C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe')
     else:
         candidates=list(Path('C:/Windows/System32/CatRoot').glob('*/Windows-ClientCore-Win32Bridge-Package*.cat'))
@@ -148,17 +145,16 @@ def test_native_file_trust_uses_handle_when_path_names_different_bytes(tmp_path,
     if not signed.exists():pytest.skip('Platform signed fixture absent')
     unsigned=tmp_path/('unsigned.'+kind);unsigned.write_bytes(b'inert unsigned fixture')
     held,named=(signed,unsigned) if hold_signed else (unsigned,signed)
-    native=sig._native()
+    native=sig.wintrust()
     class DifferentPath:
         def __getattr__(self,name):return getattr(native,name)
         def WinVerifyTrust(self,window,guid,pointer):
             data=C.cast(pointer,C.POINTER(sig.TrustData)).contents
             if data.action==1:data.file.contents.path=str(named)
             return native.WinVerifyTrust(window,guid,pointer)
-    monkeypatch.setattr(sig,'_native',DifferentPath)
     with PinnedFile(held) as pin:
         if hold_signed:
-            try:evidence=sig.inspect_signature(pin)
+            try:evidence=sig.inspect_signature(pin,api=DifferentPath())
             except SafetyError as error:
                 if '0x80092013' in str(error) or '0x800b010e' in str(error):
                     pytest.skip('Cached revocation evidence unavailable: '+str(error))
@@ -167,4 +163,4 @@ def test_native_file_trust_uses_handle_when_path_names_different_bytes(tmp_path,
             assert not evidence['release_authority_verified']
         else:
             with pytest.raises(SafetyError,match='Offline Authenticode verification failed'):
-                sig.inspect_signature(pin)
+                sig.inspect_signature(pin,api=DifferentPath())

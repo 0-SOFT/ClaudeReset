@@ -6,7 +6,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
-from claude_reset.install_inventory import inspect
+from claude_reset.windows.service_inventory import inspect
 
 
 if __name__ == '__main__':

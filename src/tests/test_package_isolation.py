@@ -4,10 +4,11 @@ import subprocess
 
 import pytest
 
-from claude_reset import netguard, package_isolation as pkg
+from claude_reset.network import legacy_guard as netguard, package_isolation as pkg
 from claude_reset.safeio import SafetyError
+from claude_reset import config
 
-FAMILY = netguard.OWNED_PACKAGE[0]
+FAMILY = config.OWNED_PACKAGE[0]
 FULL = 'ClaudeReset.NetworkIsolation_1.0.0.0_neutral__79st3xwgefr0c'
 
 
@@ -45,7 +46,7 @@ def admitted_call(function, report, **kwargs):
     # calls retain their claim; subsequent scenarios never erase it for retry.
     from types import SimpleNamespace
     from uuid import uuid4
-    from claude_reset import uac_request as uac
+    from claude_reset.elevation import request as uac
     root = report.parent / uuid4().hex
     paths = SimpleNamespace(state=root / 'state', local=root / 'local')
     operation = 'package-register' if function is pkg.register else 'package-remove'
@@ -125,7 +126,7 @@ def test_accepted_requires_the_exact_family_and_publisher():
 
 def test_child_receipt_identity(tmp_path, sources):
     from types import SimpleNamespace
-    from claude_reset import uac_request as uac
+    from claude_reset.elevation import request as uac
     paths = SimpleNamespace(state=tmp_path, local=tmp_path / 'local')
     report, windows = tmp_path / 'receipt.json', Windows()
     for operation, function, extra in (
@@ -140,4 +141,4 @@ def test_child_receipt_identity(tmp_path, sources):
         assert row['request_id'] == request.request_id
         assert row['state_root'] == str(tmp_path)
         assert row['finished'] is True
-        uac._release(paths, request)
+        uac.release(paths, request)

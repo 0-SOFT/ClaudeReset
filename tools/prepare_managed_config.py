@@ -10,11 +10,14 @@ import sys
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def managed_policy_contract():
+def managed_policy_contract(*,policy=None,boxes=None):
+    """The installer's fixed boxes and isolation settings; policy and boxes are the modules that define them
+    (backend.broker_policy and backend.boxes unless a test gives stand-ins)."""
     # Use the installer's actual fixed policy, not a second native spelling.
     sys.path.insert(0,str(ROOT/'src'))
-    from claude_reset import broker_policy,install_configuration
-    for module,name in ((broker_policy,'broker_policy.py'),(install_configuration,'install_configuration.py')):
+    from claude_reset.backend import broker_policy, boxes as install_configuration
+    broker_policy,install_configuration=policy or broker_policy,boxes or install_configuration
+    for module,name in ((broker_policy,'backend/broker_policy.py'),(install_configuration,'backend/boxes.py')):
         if Path(module.__file__).resolve()!=(ROOT/'src/claude_reset'/name).resolve():
             raise RuntimeError('Managed policy must come from this reviewed source tree')
     BOXES=install_configuration.BOXES
@@ -29,7 +32,7 @@ def managed_policy_contract():
 
 def managed_forbidden_settings():
     managed_policy_contract()  # Also checks both imported modules belong to this tree.
-    from claude_reset.broker_policy import FORBIDDEN_SETTINGS
+    from claude_reset.backend.broker_policy import FORBIDDEN_SETTINGS
     values=FORBIDDEN_SETTINGS
     if (type(values) is not tuple or not 1<=len(values)<=64
             or any(not isinstance(v,str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9]*',v) for v in values)

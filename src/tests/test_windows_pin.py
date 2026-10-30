@@ -1,6 +1,6 @@
 import hashlib
 import pytest
-from claude_reset.windows_pin import PinnedFile
+from claude_reset.windows.pin import PinnedFile
 from claude_reset.safeio import SafetyError
 
 

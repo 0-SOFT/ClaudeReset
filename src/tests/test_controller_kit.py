@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from claude_reset import l1_install
+from claude_reset.network import l1_install
 from claude_reset.safeio import SafetyError
 
 
@@ -48,7 +48,7 @@ def test_kit_from_other_sources_is_not_used(root):
 def test_changed_executable_is_refused(root):
     kit = make_kit(root)
     (kit / 'ClaudeReset.exe').write_bytes(b'replaced')
-    with pytest.raises(SafetyError, match='повреждён'):
+    with pytest.raises(SafetyError, match='damaged'):
         l1_install.controller_kit(root=root)
     (kit / 'ClaudeResetRun.exe').unlink()
     with pytest.raises(SafetyError):
@@ -70,11 +70,11 @@ def test_digest_covers_names_and_contents(root):
     assert len({first, second, l1_install.source_digest(root)}) == 3
 
 
-def test_install_prefers_the_kit_and_builds_only_without_it(monkeypatch, tmp_path):
+def test_install_prefers_the_kit_and_builds_only_without_it(tmp_path):
     built = []
-    monkeypatch.setattr(l1_install, 'build_executables', lambda out: built.append(out) or out / 'dist')
-    monkeypatch.setattr(l1_install, 'controller_kit', lambda: tmp_path / 'kit')
-    assert l1_install.prepare_executables(tmp_path) == tmp_path / 'kit' and not built
-    monkeypatch.setattr(l1_install, 'controller_kit', lambda: None)
-    assert l1_install.prepare_executables(tmp_path) == tmp_path / 'dist' and built == [tmp_path]
+    build = lambda out: built.append(out) or out / 'dist'
+    assert l1_install.prepare_executables(tmp_path, kit=lambda: tmp_path / 'kit', build=build) == tmp_path / 'kit'
+    assert not built
+    assert l1_install.prepare_executables(tmp_path, kit=lambda: None, build=build) == tmp_path / 'dist'
+    assert built == [tmp_path]
     assert l1_install.Deps.build.__name__ == 'prepare_executables'

@@ -6,9 +6,9 @@ import types
 
 import pytest
 
-from claude_reset import remote_backend as rb
-from claude_reset import tunnel_transport as transport
-from claude_reset.connections import read_exact
+from claude_reset.network import remote_backend as rb
+from claude_reset.network import tunnel_transport as transport
+from claude_reset.network.connections import read_exact
 from claude_reset.safeio import SafetyError
 
 HOST = '93.184.216.34'          # a literal public address; never contacted by these tests
@@ -228,16 +228,17 @@ def test_install_never_overwrites_an_existing_profile(tmp_path):
     assert result['status'] == 'not_started' and rb.load(paths)['port'] == 33540
 
 
-def test_backend_install_routes_a_socks5_profile_to_the_remote_installer(tmp_path, monkeypatch):
-    from claude_reset import backend_install
+def test_backend_install_routes_a_socks5_profile_to_the_remote_installer(tmp_path):
+    from claude_reset.backend import install as backend_install
     called = {}
-    monkeypatch.setattr(rb, 'install', lambda paths, file: called.setdefault('file', file) and {'status': 'installed'})
-    result = backend_install.install(types.SimpleNamespace(home=tmp_path, state=tmp_path / 'state', local=tmp_path / 'local'), write(tmp_path, profile()))
+    remote = lambda paths, file: called.setdefault('file', file) and {'status': 'installed'}
+    result = backend_install.install(types.SimpleNamespace(home=tmp_path, state=tmp_path / 'state', local=tmp_path / 'local'),
+                                     write(tmp_path, profile()), install_remote=remote)
     assert result == {'status': 'installed'} and called['file']
 
 
 def test_readiness_treats_a_remote_profile_as_the_backend():
-    from claude_reset import l1_check
+    from claude_reset.network import l1_check
     base = {'os_build': 26200, 'cpu_architecture': 9, 'bfe': 'Running', 'free_gb': 50, 'allow_unsigned': True, 'extensions': ['2.1.311'],
             'desktop': None, 'tasks': {}, 'listeners': {}, 'cli': {'present': False}, 'program_files': [], 'consent': False}
     plain = l1_check.evaluate(dict(base, remote_backend=False))
@@ -246,41 +247,42 @@ def test_readiness_treats_a_remote_profile_as_the_backend():
     assert ids(plain)['backend_task'] == 'missing' and ids(remote)['backend_task'] == 'ok' and ids(remote)['backend_listening'] == 'ok'
 
 
-def test_connection_check_with_a_remote_backend_measures_through_the_proxy_not_the_missing_loopback_port(tmp_path, monkeypatch):
+def test_connection_check_with_a_remote_backend_measures_through_the_proxy_not_the_missing_loopback_port(tmp_path):
     """Regression (second PC): --connection-check measured 127.0.0.1:25080, where nothing listens with a remote backend."""
-    from claude_reset import connections
+    from claude_reset.network import connections
     paths = types.SimpleNamespace(state=tmp_path / 'state', local=tmp_path / 'local')
     paths.state.mkdir()
     rb.save(paths, profile())
-    monkeypatch.setattr(connections, 'load', lambda p: {'schema': 1, 'local_proxy': 'http://127.0.0.1:25080', 'router_proxy': None,
-                                                         'expected_exit_ips': ['93.184.216.35']})
+    connections.save(paths, {'schema': 1, 'local_proxy': 'http://127.0.0.1:25080', 'router_proxy': None,
+                             'expected_exit_ips': ['93.184.216.35']})
     seen = []
-    monkeypatch.setattr(rb, 'measure_exit', lambda prof: seen.append(prof['host']) or {'status': 'measured', 'exit_ip': '93.184.216.35', 'address_family': 4})
-    result = connections.check_saved(paths)
+    remote = lambda prof: seen.append(prof['host']) or {'status': 'measured', 'exit_ip': '93.184.216.35', 'address_family': 4}
+    result = rb.check_saved(paths, measure_remote=remote, measure_local=lambda proxy: pytest.fail('loopback measured'))
     assert result['passed'] is True and seen == [HOST]
-    monkeypatch.setattr(rb, 'measure_exit', lambda prof: {'status': 'measured', 'exit_ip': '8.8.4.4', 'address_family': 4})
-    assert connections.check_saved(paths)['passed'] is False
+    moved = lambda prof: {'status': 'measured', 'exit_ip': '8.8.4.4', 'address_family': 4}
+    assert rb.check_saved(paths, measure_remote=moved)['passed'] is False
 
 
-def test_connection_check_without_a_remote_backend_is_unchanged(tmp_path, monkeypatch):
-    from claude_reset import connections
+def test_connection_check_without_a_remote_backend_is_unchanged(tmp_path):
+    from claude_reset.network import connections
     paths = types.SimpleNamespace(state=tmp_path / 'state', local=tmp_path / 'local')
     paths.state.mkdir()
-    profile_ = {'schema': 1, 'local_proxy': 'http://127.0.0.1:25080', 'router_proxy': None, 'expected_exit_ips': ['93.184.216.35']}
-    monkeypatch.setattr(connections, 'load', lambda p: profile_)
+    connections.save(paths, {'schema': 1, 'local_proxy': 'http://127.0.0.1:25080', 'router_proxy': None,
+                             'expected_exit_ips': ['93.184.216.35']})
     asked = []
-    monkeypatch.setattr(connections, 'measure', lambda proxy: asked.append(proxy) or {'status': 'measured', 'exit_ip': '93.184.216.35', 'address_family': 4})
-    assert connections.check_saved(paths)['passed'] is True and asked == ['http://127.0.0.1:25080']
+    local = lambda proxy: asked.append(proxy) or {'status': 'measured', 'exit_ip': '93.184.216.35', 'address_family': 4}
+    result = rb.check_saved(paths, measure_remote=lambda prof: pytest.fail('no remote proxy is saved'), measure_local=local)
+    assert result['passed'] is True and asked == ['http://127.0.0.1:25080']
 
 
 @pytest.mark.parametrize('adapter', [rb.ADAPTER, rb.HTTP_ADAPTER])
-def test_backend_import_dispatches_both_remote_types(tmp_path, monkeypatch, adapter):
-    from claude_reset import backend_install
+def test_backend_import_dispatches_both_remote_types(tmp_path, adapter):
+    from claude_reset.backend import install as backend_install
     calls = []
-    monkeypatch.setattr(rb, 'install', lambda paths, file: calls.append(file) or {'status': 'installed'})
+    remote = lambda paths, file: calls.append(file) or {'status': 'installed'}
     paths = types.SimpleNamespace(home=tmp_path, state=tmp_path / 'state', local=tmp_path / 'local')
     source = write(tmp_path, profile(adapter=adapter))
-    assert backend_install.install(paths, source) == {'status': 'installed'}
+    assert backend_install.install(paths, source, install_remote=remote) == {'status': 'installed'}
     assert calls == [source]
 
 
@@ -300,9 +302,8 @@ def test_http_measure_uses_existing_relay(monkeypatch):
             stream.sendall(b'fixture')
             assert read_exact(stream, 7) == b'fixture'
         return {'status': 'measured', 'exit_ip': HOST}
-    monkeypatch.setattr('claude_reset.connections.measure', measure)
     try:
-        assert rb.measure_exit(profile(adapter=rb.HTTP_ADAPTER))['status'] == 'measured'
+        assert rb.measure_exit(profile(adapter=rb.HTTP_ADAPTER), measure=measure)['status'] == 'measured'
         assert attempts == [(HOST, 33540)]
         assert server.names == [b'fixture.invalid:443']
     finally:

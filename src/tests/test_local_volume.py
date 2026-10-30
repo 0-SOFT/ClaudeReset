@@ -1,18 +1,17 @@
-from types import SimpleNamespace
-from unittest.mock import MagicMock
 import pytest
-from claude_reset import safeio, state_location, backend_profiles, strict_wfp
+from claude_reset import safeio, layout
+from claude_reset.backend import profiles as backend_profiles
+from claude_reset.network import strict_wfp
 from test_reset import paths
 
 
 def test_mapped_remote_drive_rejected_before_any_file_lookup(tmp_path, paths, monkeypatch):
-    api = SimpleNamespace(GetDriveTypeW=MagicMock(return_value=4))
-    monkeypatch.setattr(safeio.ctypes, 'WinDLL', lambda *args, **kwargs: api)
+    monkeypatch.setattr(safeio, 'drive_type', lambda root: 4)  # DRIVE_REMOTE
     def forbidden(*args, **kwargs): raise AssertionError('Remote filesystem must not be touched')
     monkeypatch.setattr(safeio.Path, 'open', forbidden)
     monkeypatch.setattr(safeio.Path, 'lstat', forbidden)
     monkeypatch.setattr(safeio.Path, 'exists', forbidden)
-    for action in (lambda: state_location.validate_root(tmp_path / 'state', tmp_path),
+    for action in (lambda: layout.validate_root(tmp_path / 'state', tmp_path),
                    lambda: backend_profiles.import_profile(paths, tmp_path / 'profile.json'),
                    lambda: strict_wfp.Identity('app', str(tmp_path / 'fixture.exe')).validate()):
         with pytest.raises(safeio.SafetyError): action()

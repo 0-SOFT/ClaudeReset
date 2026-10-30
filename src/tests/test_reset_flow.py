@@ -2,9 +2,13 @@
 from types import SimpleNamespace
 
 import pytest
+from claude_reset.model.confirmation import Confirmation
 
-from claude_reset import cleanup, reset_flow
+from claude_reset.reset import cleanup
+from claude_reset.ui import reset_flow
+from claude_reset.services import reset as reset_service
 from claude_reset.safeio import SafetyError
+from scripted import Strict
 
 
 class FakeActions:
@@ -22,7 +26,7 @@ class FakeActions:
 
 
 @pytest.fixture
-def world(monkeypatch, tmp_path):
+def world(tmp_path):
     """prepare_wipe/preview driven by a mutable list of blockers and processes."""
     state = SimpleNamespace(blockers=[], processes=[], rows=[], credentials=(), checks=0, plans=[])
 
@@ -40,15 +44,15 @@ def world(monkeypatch, tmp_path):
     def inspect():
         state.checks += 1
         return {'processes': [{'kind': k} for k in state.processes]}
-    monkeypatch.setattr(cleanup, 'prepare_wipe', prepare)
-    monkeypatch.setattr(cleanup, 'preview', preview)
+    state.planner = Strict(prepare_wipe=prepare, preview=preview)
     state.inspect = inspect
     state.paths = SimpleNamespace(home=tmp_path, local=tmp_path, state=tmp_path / 'state')
     return state
 
 
 def session(world, actions, keep=True):
-    return reset_flow.ResetSession(world.paths, keep_memory=keep, inspect=world.inspect, actions=actions)
+    return reset_service.ResetSession(world.paths, keep_memory=keep, inspect=world.inspect, actions=actions,
+                                      planner=world.planner)
 
 
 def test_check_reports_found_data_in_plain_words(world):
@@ -56,7 +60,8 @@ def test_check_reports_found_data_in_plain_words(world):
                   {'label': 'Claude Code', 'status': 'absent', 'bytes': 0, 'files': 0}]
     world.credentials = ('LegacyGeneric:target=Claude',)
     result = session(world, FakeActions()).check()
-    assert result['rows'] == [{'label': 'Claude Desktop: вход, история, настройки', 'size': '3,0 ГБ', 'status': 'present'}]
+    assert result['rows'] == [{'label': 'Desktop', 'bytes': 3 * 1024 ** 3, 'status': 'present'}]
+    assert reset_flow.shown(result)['rows'] == [{'label': 'Claude Desktop: вход, история, настройки', 'size': '3,0 ГБ', 'status': 'present'}]
     assert result['credentials'] == 1 and result['ready'] and not result['nothing_found']
 
 
@@ -122,11 +127,11 @@ def test_wipe_needs_the_word_and_a_clean_plan(world):
     with pytest.raises(SafetyError):
         run.wipe('стереть')
     with pytest.raises(SafetyError):
-        run.wipe('СТЕРЕТЬ')                           # never checked
+        run.wipe(Confirmation.ERASE)                           # never checked
     world.blockers = ['vscode']
     run.check()
     with pytest.raises(SafetyError):
-        run.wipe('СТЕРЕТЬ')
+        run.wipe(Confirmation.ERASE)
 
 
 def test_wipe_resets_keys_first_rechecks_and_reports(world):
@@ -136,7 +141,7 @@ def test_wipe_resets_keys_first_rechecks_and_reports(world):
     run = session(world, actions)
     run.check()
     labels = []
-    result = run.wipe('СТЕРЕТЬ', browsers=True, step=lambda label, fn, uac=False: labels.append(label) or fn())
+    result = run.wipe(Confirmation.ERASE, browsers=True, step=lambda label, fn, uac=False: labels.append(label) or fn())
     assert labels == ['desktop_keys', 'check', 'wipe', 'browsers']
     assert result == {'status': 'done', 'memory': 'restored_verbatim', 'desktop_keys': 'reset',
                       'browsers': 'browsers_open', 'passwords_removed': 2, 'no_files_left': True}
@@ -149,7 +154,7 @@ def test_wipe_without_memory_uses_the_final_audit(world):
     run = session(world, actions, keep=False)
     run.check()
     assert run.mode == 'wipe' and world.plans[-1].mode == 'wipe'
-    result = run.wipe('СТЕРЕТЬ')
+    result = run.wipe(Confirmation.ERASE)
     assert result['no_files_left'] is True and result['browsers'] == 'not_requested'
 
 
@@ -157,53 +162,55 @@ def test_failed_wipe_is_a_plain_result_not_an_exception(world):
     actions = FakeActions(reset_desktop_keys='not_supported', wipe=SafetyError('C:/Users/someone/.claude'))
     run = session(world, actions)
     run.check()
-    result = run.wipe('СТЕРЕТЬ')
+    result = run.wipe(Confirmation.ERASE)
     assert result == {'status': 'failed', 'desktop_keys': 'not_supported'} and 'someone' not in repr(result)
 
 
-def test_archive_extras_falls_back_to_no_copy_when_a_file_looks_like_a_secret(monkeypatch, tmp_path):
-    from claude_reset import customizations
+def test_archive_extras_falls_back_to_no_copy_when_a_file_looks_like_a_secret(tmp_path):
     paths = SimpleNamespace(home=tmp_path)
     plans, applied = [], []
-    monkeypatch.setattr(customizations, 'extra_entries', lambda profile: ['agents', 'secrets.env'])
 
     def create(paths, entries):
         plans.append(list(entries))
         if entries:
             raise SafetyError('possible credential')
         return {'run': 'a' * 32}
-    monkeypatch.setattr(customizations, 'create_plan', create)
-    monkeypatch.setattr(customizations, 'apply_plan', lambda p, run, server_step_complete: applied.append((run, server_step_complete)) or {})
-    reset_flow.Actions(paths).archive_extras()
+    actions = reset_service.Actions(paths)
+    actions.customizations = Strict(extra_entries=['agents', 'secrets.env'], create_plan=create,
+                                    apply_plan=lambda p, run, server_step_complete: applied.append((run, server_step_complete)) or {})
+    actions.archive_extras()
     assert plans == [['agents', 'secrets.env'], []] and applied == [('a' * 32, True)]
 
 
-def test_browser_cleanup_reports_open_browsers(monkeypatch, tmp_path):
-    from claude_reset import browser_sites
+def test_browser_cleanup_reports_open_browsers(tmp_path):
+    from claude_reset.reset import browser_sites
     def refuse(paths, **_):
-        raise SafetyError('Закройте Chrome и Edge самостоятельно и повторите проверку.')
-    monkeypatch.setattr(browser_sites, 'site_data', refuse)
-    assert reset_flow.Actions(tmp_path).clear_browsers() == 'browsers_open'
-    monkeypatch.setattr(browser_sites, 'site_data', lambda paths, **kw: kw)
-    assert reset_flow.Actions(tmp_path).clear_browsers() == 'cleared'
+        raise browser_sites.BrowsersOpenError('any wording')
+    def other(paths, **_):
+        raise SafetyError('Закройте что-то другое')
+    actions = reset_service.Actions(tmp_path)
+    for site_data, expected in ((refuse, 'browsers_open'), (other, 'failed'), (lambda paths, **kw: kw, 'cleared')):
+        actions.browser_sites = Strict(site_data=site_data)
+        assert actions.clear_browsers() == expected
 
 
-def test_desktop_keys_states(monkeypatch, tmp_path):
-    from claude_reset import desktop_keys
-    from claude_reset.native_worker import FAMILY
+def test_desktop_keys_states(tmp_path):
+    from claude_reset.reset.native_worker import FAMILY
     paths = SimpleNamespace(local=tmp_path, state=tmp_path)
-    assert reset_flow.Actions(paths).reset_desktop_keys() == 'not_present'
+    actions = reset_service.Actions(paths)
+    actions.desktop_keys = Strict()   # no profile: nothing is asked
+    assert actions.reset_desktop_keys() == 'not_present'
     (tmp_path / 'Claude-Data' / FAMILY.lower()).mkdir(parents=True)
     def unsupported(*_):
         raise SafetyError('validated MSIX installation')
-    monkeypatch.setattr(desktop_keys, 'create_plan', unsupported)
-    assert reset_flow.Actions(paths).reset_desktop_keys() == 'not_supported'
-    monkeypatch.setattr(desktop_keys, 'create_plan', lambda p, profile: {'run': 'r', 'keys': 0})
-    assert reset_flow.Actions(paths).reset_desktop_keys() == 'no_keys'
+    actions.desktop_keys = Strict(create_plan=unsupported)
+    assert actions.reset_desktop_keys() == 'not_supported'
+    actions.desktop_keys = Strict(create_plan={'run': 'r', 'keys': 0})
+    assert actions.reset_desktop_keys() == 'no_keys'
     applied = []
-    monkeypatch.setattr(desktop_keys, 'create_plan', lambda p, profile: {'run': 'r', 'keys': 2})
-    monkeypatch.setattr(desktop_keys, 'apply_plan', lambda p, run, server_step_complete: applied.append(run))
-    assert reset_flow.Actions(paths).reset_desktop_keys() == 'reset' and applied == ['r']
+    actions.desktop_keys = Strict(create_plan={'run': 'r', 'keys': 2},
+                                  apply_plan=lambda p, run, server_step_complete: applied.append(run))
+    assert actions.reset_desktop_keys() == 'reset' and applied == ['r']
 
 
 def test_sizes_are_human():

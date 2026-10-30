@@ -4,14 +4,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset import app
-from claude_reset.gui_worker import Event, Worker
-from claude_reset.i18n import gui_message
+from claude_reset.ui import expert_window as app
+from claude_reset.ui.worker import Event, Worker
+from claude_reset.ui.text import gui_message
 from claude_reset.safeio import SafetyError
+from dialog_fakes import script
+from scripted import Strict
 
 
 @pytest.fixture
-def window(monkeypatch):
+def window():
     ui = app.App.__new__(app.App)
     ui.worker = Worker()
     ui.events = ui.worker.events
@@ -20,7 +22,7 @@ def window(monkeypatch):
     ui.messages, ui.scheduled, ui.statuses = [], [], []
     ui.status = SimpleNamespace(set=ui.statuses.append)
     ui.root = SimpleNamespace(after=lambda *args: ui.scheduled.append(args))
-    monkeypatch.setattr(app.messagebox, 'showerror', lambda *args: ui.messages.append(args))
+    script(ui, showerror=lambda *args: ui.messages.append(args))
     return ui
 
 
@@ -107,8 +109,8 @@ def test_thread_start_failure_releases_busy(window):
     assert window.messages[-1][1] == gui_message('worker_start_failed')
 
 
-def test_poll_reschedules_even_when_error_dialog_fails(window, monkeypatch):
-    monkeypatch.setattr(app.messagebox, 'showerror', lambda *args: fail())
+def test_poll_reschedules_even_when_error_dialog_fails(window):
+    script(window, showerror=lambda *args: fail())
     window.run(fail, lambda _: None)
     with pytest.raises(SafetyError):
         finish(window)
@@ -151,14 +153,14 @@ def test_safe_action_does_not_bypass_active_worker(window):
 
 @pytest.mark.parametrize('action', ['apply', 'save_policy'])
 @pytest.mark.parametrize('change', ['replace', 'invalidate', 'edit', 'invalidate_restore', 'busy'])
-def test_confirmation_cannot_authorize_changed_plan(window, monkeypatch, action, change, tmp_path):
+def test_confirmation_cannot_authorize_changed_plan(window, action, change, tmp_path):
     original = SimpleNamespace(id='reviewed', blockers=[], actions=['reviewed-target'])
     window.plan = original
     window.server_done = SimpleNamespace(get=lambda: True)
     window.paths = SimpleNamespace(state=tmp_path)
-    monkeypatch.setattr(app.filedialog, 'asksaveasfilename', lambda **_: str(tmp_path / 'policy.dpapi'))
-    monkeypatch.setattr(app, 'Executor', lambda *_: pytest.fail('must not execute'))
-    monkeypatch.setattr(app, 'save_policy', lambda *_a, **_kw: pytest.fail('must not save'))
+    script(window, asksaveasfilename=lambda **_: str(tmp_path / 'policy.dpapi'))
+    window.executor = lambda *_: pytest.fail('must not execute')
+    window.policy = Strict()   # saving a policy fails the test
 
     def confirm(*_):
         if change == 'replace':
@@ -174,37 +176,34 @@ def test_confirmation_cannot_authorize_changed_plan(window, monkeypatch, action,
             window.worker = SimpleNamespace(busy=True)
         return True
 
-    monkeypatch.setattr(app.messagebox, 'askyesno', confirm)
+    script(window, askyesno=confirm)
     getattr(window, action)()
     assert window.messages[-1][1] == gui_message('plan_changed')
     assert window.operation is None
     assert not (tmp_path / 'policy.dpapi').exists()
 
 
-def test_policy_file_dialog_invalidates_plan_before_consent(window, monkeypatch, tmp_path):
+def test_policy_file_dialog_invalidates_plan_before_consent(window, tmp_path):
     window.plan = SimpleNamespace(id='reviewed', blockers=[])
     def choose(**_):
         window.invalidate()
         return str(tmp_path / 'policy.dpapi')
-    monkeypatch.setattr(app.filedialog, 'asksaveasfilename', choose)
-    monkeypatch.setattr(app.messagebox, 'askyesno', lambda *_: pytest.fail('stale confirmation'))
+    script(window, asksaveasfilename=choose, askyesno=lambda *_: pytest.fail('stale confirmation'))
     window.save_policy()
     assert window.messages[-1][1] == gui_message('plan_changed')
 
 
 @pytest.mark.parametrize('action', ['apply', 'save_policy'])
-def test_unchanged_confirmation_uses_private_snapshot(window, monkeypatch, action, tmp_path):
-    monkeypatch.setattr(app.simpledialog, 'askstring', lambda *a, **kw: 'СБРОСИТЬ')
+def test_unchanged_confirmation_uses_private_snapshot(window, action, tmp_path):
+    script(window, askstring='СБРОСИТЬ')
     original = SimpleNamespace(id='reviewed', blockers=[], actions=['reviewed-target'])
     window.plan = original
     window.paths = SimpleNamespace(state=tmp_path)
     window.server_done = SimpleNamespace(get=lambda: True)
     received = []
-    monkeypatch.setattr(app.messagebox, 'askyesno', lambda *_: True)
-    monkeypatch.setattr(app.filedialog, 'asksaveasfilename', lambda **_: str(tmp_path / 'policy.dpapi'))
-    monkeypatch.setattr(app, 'save_policy', lambda _file, plan, **kw: received.append((plan, kw)))
-    monkeypatch.setattr(app, 'Executor', lambda *_: SimpleNamespace(
-        apply=lambda plan, **kw: received.append((plan, kw))))
+    script(window, askyesno=True, asksaveasfilename=lambda **_: str(tmp_path / 'policy.dpapi'))
+    window.policy = Strict(save_policy=lambda _file, plan, **kw: received.append((plan, kw)))
+    window.executor = lambda *_: SimpleNamespace(apply=lambda plan, **kw: received.append((plan, kw)))
     window.run = lambda work, _callback: work()
     getattr(window, action)()
     original.actions.append('later-change')

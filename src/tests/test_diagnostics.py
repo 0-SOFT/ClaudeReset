@@ -4,13 +4,14 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 import pytest
+from dialog_fakes import Dialogs
 from test_reset import paths, platform, FakeCrypto, apply, plan_for
-from claude_reset.browser_probe import browser_measurement, validate_measurement
-from claude_reset.services import launch_clean_chrome
-from claude_reset.services import managed_chrome_profiles
+from claude_reset.privacy.browser_probe import browser_measurement, validate_measurement
+from claude_reset.reset.new_account import launch_clean_chrome
+from claude_reset.reset.new_account import managed_chrome_profiles
 from claude_reset.safeio import SafetyError
-from claude_reset.core import build_plan
-from claude_reset.windows import ps_json
+from claude_reset.reset.planner import build_plan
+from claude_reset.windows.system import ps_json
 
 
 def test_browser_measurement_loopback_only():
@@ -24,7 +25,8 @@ def test_browser_measurement_loopback_only():
                   headers={'Content-Type':'application/json', 'Origin':origin, 'Accept-Language':'en-US,en;q=0.9,ru;q=0.8'})
         with urllib.request.urlopen(request, timeout=2) as response:
             assert json.load(response)['offset_minutes'] == 180
-    result = browser_measurement(launch, timeout=2)
+    from claude_reset.ui.text.ru import PROBE_PAGE
+    result = browser_measurement(launch, PROBE_PAGE, timeout=2)
     assert result['timezone'] == 'Europe/Istanbul'
     assert result['accept_language'] == 'en-US,en;q=0.9,ru;q=0.8'
     assert result['network_verified'] is False
@@ -38,7 +40,7 @@ def test_browser_measurement_rejects_untrusted_origin(body):
             urllib.request.urlopen(request, timeout=2)
         assert error.value.code == 400
     with pytest.raises(SafetyError, match='timed out'):
-        browser_measurement(launch, timeout=0.05)
+        browser_measurement(launch, '<html></html>', timeout=0.05)
 
 
 def test_browser_measurement_rejects_unexpected_content():
@@ -61,16 +63,16 @@ def test_legacy_managed_profile_cannot_bypass_windows_gate(paths, monkeypatch, u
     p = plan_for(paths, ('chrome',))
     apply(paths, p)
     monkeypatch.setattr('subprocess.Popen', lambda *a, **kw: pytest.fail('Browser must not start outside isolation'))
-    with pytest.raises(SafetyError, match='без сетевой защиты отключён') as error:
+    with pytest.raises(SafetyError, match='without network protection is disabled') as error:
         launch_clean_chrome(paths, p.id, url, loopback_probe=loopback)
     assert 'TEST_ONLY' not in str(error.value)
 
 
 @pytest.mark.parametrize('kind', ['sessions', 'code_tokens', 'help'])
 def test_server_links_do_not_start_shared_browser(monkeypatch, kind):
-    from claude_reset.services import open_server_page
+    from claude_reset.reset.new_account import open_server_page
     monkeypatch.setattr('webbrowser.open', lambda *a, **kw: pytest.fail('Shared browser bypass'))
-    with pytest.raises(SafetyError, match='общий браузер отключено'):
+    with pytest.raises(SafetyError, match='shared browser is disabled'):
         open_server_page(kind)
 
 
@@ -90,21 +92,20 @@ def test_managed_profile_discovery_requires_valid_owned_marker(paths):
         managed_chrome_profiles(paths)
 
 
-def test_open_chrome_single_profile_and_ambiguous_selection(paths, monkeypatch):
-    from claude_reset.app import App
+def test_open_chrome_single_profile_and_ambiguous_selection(paths):
+    from claude_reset.ui.expert_window import App
     from types import SimpleNamespace
     first = plan_for(paths, ('chrome',))
     apply(paths, first)
     launched = []
-    monkeypatch.setattr('claude_reset.app.launch_clean_chrome', lambda p, r: launched.append(r))
-    monkeypatch.setattr('claude_reset.app.filedialog.askopenfilename', lambda **kw: pytest.fail('Single profile needs no picker'))
-    app = SimpleNamespace(paths=paths, last_run=None, safe=lambda fn: fn())
+    app = SimpleNamespace(paths=paths, last_run=None, safe=lambda fn: fn(), launch_chrome=lambda p, r: launched.append(r),
+                          dialogs=Dialogs(askopenfilename=lambda **kw: pytest.fail('Single profile needs no picker')))
     App.open_chrome(app)
     assert launched == [first.id]
     second = plan_for(paths, ('chrome',))
     apply(paths, second)
     app.last_run = None
-    monkeypatch.setattr('claude_reset.app.filedialog.askopenfilename', lambda **kw: '')
+    app.dialogs.answers['askopenfilename'] = ''
     App.open_chrome(app)
     assert app.last_run is None and launched == [first.id]
 
@@ -113,7 +114,7 @@ def test_windows_inspection_timeout_is_sanitized(monkeypatch):
     import subprocess
     def fail(*args, **kw):
         raise subprocess.TimeoutExpired('SECRET_COMMAND', 55)
-    monkeypatch.setattr('claude_reset.windows.subprocess.run', fail)
+    monkeypatch.setattr('claude_reset.windows.system.subprocess.run', fail)
     with pytest.raises(SafetyError) as error:
         ps_json('fixture')
     assert 'SECRET_COMMAND' not in str(error.value)

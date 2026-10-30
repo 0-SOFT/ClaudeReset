@@ -39,7 +39,7 @@ def relaunch_elevated(report):
 
 
 def main():
-    from claude_reset import l1_mechanism
+    from claude_reset.network import l1_mechanism
     if len(sys.argv) == 3 and sys.argv[1] == '--elevated':
         l1_mechanism.run(Path(sys.argv[2]))
         return 0

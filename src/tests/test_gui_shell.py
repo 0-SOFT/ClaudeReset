@@ -2,8 +2,11 @@
 from types import SimpleNamespace
 import json
 import pytest
+from claude_reset.model.confirmation import Confirmation
 
-from claude_reset import app
+from claude_reset.ui import expert_window as app
+from dialog_fakes import script
+from scripted import Strict
 
 
 class Widget:
@@ -77,8 +80,8 @@ def ui(monkeypatch, tmp_path):
     monkeypatch.setattr(app.scrolledtext, 'ScrolledText', Widget)
     window = app.App(root=Widget(), paths=SimpleNamespace(state=tmp_path, home=tmp_path, local=tmp_path))
     window.messages = []
-    monkeypatch.setattr(app.messagebox, 'showerror', lambda *args: window.messages.append(args))
-    monkeypatch.setattr(app.messagebox, 'showinfo', lambda *args: window.messages.append(args))
+    script(window, showerror=lambda *args: window.messages.append(args),
+           showinfo=lambda *args: window.messages.append(args))
     return window
 
 
@@ -86,16 +89,15 @@ def button(label):
     return next(w for w in reversed(Widget.all) if w.options.get('text') == label)
 
 
-def test_diagnostics_buttons_and_export(ui, monkeypatch, tmp_path):
-    from claude_reset import diagnostics
+def test_diagnostics_buttons_and_export(ui, tmp_path):
     calls = []
-    monkeypatch.setattr(ui, 'run', lambda action, callback: callback(action()))
-    monkeypatch.setattr(diagnostics, 'collect', lambda paths: calls.append('collect') or {'schema': 1})
-    monkeypatch.setattr(diagnostics, 'operation_history', lambda paths: calls.append('history') or {'rows': []})
-    monkeypatch.setattr(diagnostics, 'advise', lambda country: calls.append(country) or {'status': 'unsupported'})
-    monkeypatch.setattr(diagnostics, 'open_settings', lambda kind: calls.append(kind))
+    ui.run = lambda action, callback: callback(action())
+    ui.diagnostics = Strict(collect=lambda paths: calls.append('collect') or {'schema': 1},
+                            operation_history=lambda paths: calls.append('history') or {'rows': []},
+                            advise=lambda country: calls.append(country) or {'status': 'unsupported'},
+                            open_settings=lambda kind: calls.append(kind))
     path = tmp_path / 'diagnostic.json'
-    monkeypatch.setattr(app.filedialog, 'asksaveasfilename', lambda **kw: str(path))
+    script(ui, asksaveasfilename=lambda **kw: str(path))
     button('Проверить и показать отчёт без секретов').options['command']()
     button('Сохранить JSON').options['command']()
     assert json.loads(path.read_text(encoding='utf-8')) == {'schema': 1}
@@ -104,22 +106,22 @@ def test_diagnostics_buttons_and_export(ui, monkeypatch, tmp_path):
     button('Открыть настройки времени').options['command']()
     button('Открыть настройки языка').options['command']()
     assert calls == ['collect', 'DE', 'timezone', 'language']
-    monkeypatch.setattr(app.filedialog, 'asksaveasfilename', lambda **kw: '')
+    script(ui, asksaveasfilename='')
     button('Сохранить JSON').options['command']()
     assert json.loads(path.read_text(encoding='utf-8')) == {'schema': 1}
     button('Журнал сброса и стирания без секретов').options['command']()
     assert calls[-1] == 'history'
 
 
-def test_cleanup_buttons_and_modes(ui, monkeypatch):
-    from claude_reset import cleanup
+def test_cleanup_buttons_and_modes(ui):
+    from claude_reset.reset import cleanup
     calls = []
     result = {'rows': [], 'bytes': 0, 'zero_file_remainder': True}
-    monkeypatch.setattr(cleanup, 'preview', lambda paths, mode: calls.append(mode) or result)
-    monkeypatch.setattr(cleanup, 'prepare_wipe', lambda paths, mode, **kw: SimpleNamespace(blockers=(), mode=mode, credentials=()))
-    monkeypatch.setattr(cleanup, 'audit', lambda paths: calls.append('audit') or result)
-    monkeypatch.setattr(ui, 'run', lambda action, callback: callback(action()))
-    monkeypatch.setattr(ui, 'analyze', lambda: calls.append('reset'))
+    ui.cleanup = Strict(preview=lambda paths, mode: calls.append(mode) or result,
+                        prepare_wipe=lambda paths, mode, **kw: SimpleNamespace(blockers=(), mode=mode, credentials=()),
+                        audit=lambda paths: calls.append('audit') or result)
+    ui.run = lambda action, callback: callback(action())
+    ui.analyze = lambda: calls.append('reset')
     for mode in cleanup.MODES:
         ui.cleanup_mode.set(mode)
         button('Предпросмотр и размеры').options['command']()
@@ -129,8 +131,7 @@ def test_cleanup_buttons_and_modes(ui, monkeypatch):
 
 
 @pytest.mark.parametrize('answer', ['СТЕРЕТЬ', 'cancel', 'changed'])
-def test_cleanup_typed_confirmation(ui, monkeypatch, answer):
-    from claude_reset import cleanup
+def test_cleanup_typed_confirmation(ui, answer):
     calls = []
     plan = SimpleNamespace(id='reviewed', mode='wipe', blockers=())
     ui.cleanup_mode.set('wipe')
@@ -141,39 +142,39 @@ def test_cleanup_typed_confirmation(ui, monkeypatch, answer):
             ui.cleanup_mode.set('wipe_memory')
             return 'СТЕРЕТЬ'
         return answer
-    monkeypatch.setattr(app.simpledialog, 'askstring', confirm)
-    monkeypatch.setattr(cleanup, 'WipeExecutor', lambda paths: SimpleNamespace(
-        apply=lambda reviewed, **kw: calls.append((reviewed, kw))))
+    script(ui, askstring=confirm)
+    ui.cleanup = Strict(WipeExecutor=lambda paths: SimpleNamespace(apply=lambda reviewed, **kw: calls.append((reviewed, kw))))
     ui.run = lambda work, callback: work()
     button('Выполнить выбранную очистку').options['command']()
     assert bool(calls) == (answer == 'СТЕРЕТЬ')
     if calls:
         assert calls[0][0] is plan and calls[0][1]['consent_id'] == 'reviewed'
+        assert calls[0][1]['confirmation'] is Confirmation.ERASE
 
 
-def test_cleanup_version_choice_requires_explicit_yes(ui, monkeypatch):
+def test_cleanup_version_choice_requires_explicit_yes(ui):
     calls = []
     ui.cleanup_preview = lambda: calls.append('preview')
-    monkeypatch.setattr(app.messagebox, 'askyesno', lambda *args: False)
+    script(ui, askyesno=False)
     button('Устранить: неизвестная версия').options['command']()
     assert not ui.cleanup_accept_unlisted and not calls
-    monkeypatch.setattr(app.messagebox, 'askyesno', lambda *args: True)
+    script(ui, askyesno=True)
     button('Устранить: неизвестная версия').options['command']()
     assert ui.cleanup_accept_unlisted and calls == ['preview']
 
 
-def test_json_export_matches_display_after_source_changes(ui, monkeypatch, tmp_path):
+def test_json_export_matches_display_after_source_changes(ui, tmp_path):
     result = {'items': ['reviewed']}
     ui.show_json(result)
     displayed = next(w.content[0] for w in Widget.all if w.content and 'reviewed' in w.content[0])
     result['items'].append('later')
     destination = tmp_path / 'report.json'
-    monkeypatch.setattr(app.filedialog, 'asksaveasfilename', lambda **_: str(destination))
+    script(ui, asksaveasfilename=lambda **_: str(destination))
     button('Сохранить JSON').options['command']()
     assert json.loads(destination.read_text('utf-8')) == json.loads(displayed) == {'items': ['reviewed']}
 
 
-def test_report_snapshot_survives_modal_plan_replacement(ui, monkeypatch, tmp_path):
+def test_report_snapshot_survives_modal_plan_replacement(ui, tmp_path):
     payload = {'items': ['reviewed']}
     ui.plan = SimpleNamespace(redacted=lambda: payload)
     destination = tmp_path / 'report.json'
@@ -181,7 +182,7 @@ def test_report_snapshot_survives_modal_plan_replacement(ui, monkeypatch, tmp_pa
         payload['items'].append('later')
         ui.invalidate()
         return str(destination)
-    monkeypatch.setattr(app.filedialog, 'asksaveasfilename', choose)
+    script(ui, asksaveasfilename=choose)
     ui.save_report()
     assert json.loads(destination.read_text('utf-8')) == {'items': ['reviewed']}
 
@@ -208,11 +209,9 @@ def test_profile_window_rejects_stale_selection(ui, change):
         assert not analyzed and not child.destroyed and ui.messages
 
 
-def test_customization_window_preserves_selection_while_busy(ui, monkeypatch):
-    from claude_reset import customizations
-    monkeypatch.setattr(customizations, 'extra_entries', lambda _: ['first', 'second'])
+def test_customization_window_preserves_selection_while_busy(ui):
     calls = []
-    monkeypatch.setattr(customizations, 'create_plan', lambda paths, selected: calls.append(selected))
+    ui.customizations = Strict(extra_entries=['first', 'second'], create_plan=lambda paths, selected: calls.append(selected))
     ui.plan_customizations()
     prepare = button('Создать архив и план без удаления')
     ui.worker = SimpleNamespace(busy=True)
@@ -235,52 +234,48 @@ def test_close_protocol_refuses_busy_worker(ui):
 
 @pytest.mark.parametrize('label,method', [('Закрыть процессы Claude', 'resolve_processes'),
                                         ('Остановить службу Cowork', 'resolve_service')])
-def test_cleanup_resolve_buttons(ui, monkeypatch, label, method):
-    from claude_reset import cleanup_actions
+def test_cleanup_resolve_buttons(ui, label, method):
     calls = []
-    monkeypatch.setattr(cleanup_actions, method, lambda: calls.append(method) or {'status': 'checked'})
+    ui.cleanup_actions = Strict(**{method: lambda *names: calls.append(method) or {'status': 'checked'}})
     ui.cleanup_preview = lambda: calls.append('preview')
     ui.show_json = lambda result: calls.append(result['status'])
     ui.run = lambda work, callback: callback(work())
-    monkeypatch.setattr(app.messagebox, 'askyesno', lambda *args: False)
+    script(ui, askyesno=False)
     button(label).options['command']()
     assert not calls
-    monkeypatch.setattr(app.messagebox, 'askyesno', lambda *args: True)
+    script(ui, askyesno=True)
     button(label).options['command']()
     assert calls == [method, 'checked', 'preview']
 
 
 @pytest.mark.parametrize('word', ['СБРОСИТЬ', None, 'wrong'])
-def test_reset_word(ui, monkeypatch, word):
+def test_reset_word(ui, word):
     ui.plan = SimpleNamespace(id='plan', blockers=[])
     ui.server_done.set(True)
     calls = []
-    monkeypatch.setattr(app.messagebox, 'askyesno', lambda *args: True)
-    monkeypatch.setattr(app.simpledialog, 'askstring', lambda *args, **kw: word)
-    monkeypatch.setattr(app, 'Executor', lambda paths: SimpleNamespace(apply=lambda *a, **kw: calls.append(kw)))
+    script(ui, askyesno=True, askstring=word)
+    ui.executor = lambda paths: SimpleNamespace(apply=lambda *a, **kw: calls.append(kw))
     ui.run = lambda work, callback: work()
     button('Выполнить выбранную очистку').options['command']()
     assert bool(calls) == (word == 'СБРОСИТЬ')
 
 
 @pytest.mark.parametrize('status', ['encrypted_export_verified', 'inventory_complete'])
-def test_export_cowork_binding(ui, monkeypatch, status):
-    from claude_reset import cowork
-    monkeypatch.setattr(cowork, 'export_all', lambda *a, **kw: {'status': status, 'runs': ['a' * 32]})
+def test_export_cowork_binding(ui, status):
+    ui.cowork = Strict(export_all={'status': status, 'runs': ['a' * 32]})
     ui.run = lambda work, callback: callback(work())
     ui.show_json = lambda _: None
     button('Устранить: экспорт Cowork').options['command']()
     assert ui.cleanup_cowork_export == (('a' * 32,) if status == 'encrypted_export_verified' else None)
 
 
-def test_reset_word_cannot_authorize_replaced_plan(ui, monkeypatch):
+def test_reset_word_cannot_authorize_replaced_plan(ui):
     ui.plan = SimpleNamespace(id='plan', blockers=[])
     ui.server_done.set(True)
-    monkeypatch.setattr(app.messagebox, 'askyesno', lambda *args: True)
     def word(*args, **kw):
         ui.invalidate()
         return 'СБРОСИТЬ'
-    monkeypatch.setattr(app.simpledialog, 'askstring', word)
+    script(ui, askyesno=True, askstring=word)
     ui.run = lambda *args: pytest.fail('stale plan must not execute')
     ui.apply()
     assert ui.messages

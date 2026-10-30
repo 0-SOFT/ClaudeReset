@@ -2,11 +2,11 @@
 import json
 import pytest
 from test_reset import paths, write, platform, FakeCrypto
-from claude_reset.core import build_plan
-from claude_reset.discovery import Selection
-from claude_reset.secure_storage import BLOCKER, VARIABLES
+from claude_reset.reset.planner import build_plan
+from claude_reset.model.reset import Selection
+from claude_reset.reset.secure_storage import BLOCKER, VARIABLES
 from claude_reset.safeio import fingerprint, SafetyError
-from claude_reset.execution import Executor
+from claude_reset.reset.execution import Executor
 
 
 @pytest.mark.parametrize('component', ['code', 'vscode'])
@@ -74,7 +74,7 @@ def test_unrelated_browser_operation_does_not_read_code_authentication_metadata(
     plan = build_plan(paths, ('chrome',), platform_state=platform(),
                       env={'CLAUDE_SECURESTORAGE_CONFIG_DIR': 'PRIVATE_FIXTURE_VALUE'})
     assert BLOCKER not in plan.blockers
-    assert 'Profile discovery failed; no safe plan can be built' not in plan.blockers
+    assert 'plan.discovery_failed' not in plan.blockers
 
 
 def test_unknown_extension_version_remains_unapproved(paths):

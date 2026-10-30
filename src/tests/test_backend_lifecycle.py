@@ -1,5 +1,5 @@
 import pytest
-from claude_reset.backend_lifecycle import Generation
+from claude_reset.backend.lifecycle import Generation
 from claude_reset.safeio import SafetyError
 
 

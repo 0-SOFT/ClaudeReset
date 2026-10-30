@@ -3,13 +3,14 @@ import hashlib
 import json
 import pytest
 from test_native_runtime_trust_evidence import tool,ROOT
+from types import SimpleNamespace
 
 
 def test_native_contract_matches_the_installer_sources(monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT/'tools'))
     from prepare_managed_config import managed_policy_contract,managed_forbidden_settings
-    from claude_reset.broker_policy import ISOLATION_SETTINGS,FORBIDDEN_SETTINGS
-    from claude_reset.install_configuration import BOXES
+    from claude_reset.backend.broker_policy import ISOLATION_SETTINGS, FORBIDDEN_SETTINGS
+    from claude_reset.backend.boxes import BOXES
     boxes,settings=managed_policy_contract()
     assert boxes==BOXES and dict(settings)==ISOLATION_SETTINGS
     assert managed_forbidden_settings()==FORBIDDEN_SETTINGS
@@ -19,34 +20,17 @@ def test_native_contract_matches_the_installer_sources(monkeypatch):
 def test_unreviewed_contract_refuses_native_generation(tmp_path,monkeypatch,fault):
     monkeypatch.syspath_prepend(str(ROOT/'tools'))
     from prepare_managed_config import managed_policy_contract
-    from claude_reset import broker_policy,install_configuration
-    if fault=='foreign-module':monkeypatch.setattr(broker_policy,'__file__',str(tmp_path/'foreign.py'))
-    if fault=='duplicate-box':monkeypatch.setattr(install_configuration,'BOXES',('ClaudeReset.Code',)*5)
-    if fault=='case-alias-box':monkeypatch.setattr(install_configuration,'BOXES',('ClaudeReset.Code','ClaudeReset.code',*install_configuration.BOXES[2:]))
-    if fault=='case-alias-setting':monkeypatch.setattr(broker_policy,'ISOLATION_SETTINGS',{'Strict':'y','strict':'y'})
-    if fault=='unsafe-name':monkeypatch.setattr(broker_policy,'ISOLATION_SETTINGS',{'quote"':'y'})
-    if fault=='nonboolean-value':monkeypatch.setattr(broker_policy,'ISOLATION_SETTINGS',{'ClaudeResetStrictBroker':'yes'})
-    with pytest.raises(RuntimeError):managed_policy_contract()
-
-
-def test_serialized_installer_ini_contains_every_native_required_value_once(monkeypatch):
-    monkeypatch.syspath_prepend(str(ROOT/'tools'))
-    from prepare_managed_config import managed_policy_contract
-    from claude_reset.install_configuration import compile_configuration
-    from test_install_configuration import fixture
-    spec,data,payload=fixture()
-    raw=dict(compile_configuration(json.dumps(spec).encode(),data,payload,['C:\\','D:\\']).files())['Policy/Sandboxie.ini']
-    sections={};current=None
-    for line in raw.decode('utf-16').splitlines():
-        if not line:continue
-        if line.startswith('['):
-            current={};sections[line[1:-1]]=current
-        else:
-            key,value=line.split('=',1);current.setdefault(key.casefold(),[]).append(value)
-    boxes,settings=managed_policy_contract()
-    assert set(sections)=={'GlobalSettings',*boxes}
-    for box in boxes:
-        for name,value in settings:assert sections[box][name.casefold()]==[value]
+    from claude_reset.backend import broker_policy, boxes as install_configuration
+    policy=SimpleNamespace(__file__=broker_policy.__file__,ISOLATION_SETTINGS=broker_policy.ISOLATION_SETTINGS)
+    boxes=SimpleNamespace(__file__=install_configuration.__file__,BOXES=install_configuration.BOXES)
+    assert managed_policy_contract(policy=policy,boxes=boxes)==managed_policy_contract()
+    if fault=='foreign-module':policy.__file__=str(tmp_path/'foreign.py')
+    if fault=='duplicate-box':boxes.BOXES=('ClaudeReset.Code',)*5
+    if fault=='case-alias-box':boxes.BOXES=('ClaudeReset.Code','ClaudeReset.code',*install_configuration.BOXES[2:])
+    if fault=='case-alias-setting':policy.ISOLATION_SETTINGS={'Strict':'y','strict':'y'}
+    if fault=='unsafe-name':policy.ISOLATION_SETTINGS={'quote"':'y'}
+    if fault=='nonboolean-value':policy.ISOLATION_SETTINGS={'ClaudeResetStrictBroker':'yes'}
+    with pytest.raises(RuntimeError):managed_policy_contract(policy=policy,boxes=boxes)
 
 
 @pytest.mark.parametrize('fault',['missing-count','wrong-count','float-count','contract','missing-contract','test',

@@ -2,7 +2,7 @@ import copy
 
 import pytest
 
-from claude_reset import l1_check as check
+from claude_reset.network import l1_check as check
 
 GOOD = {
     'os_build': 26200, 'os_caption': 'Windows 11 Pro', 'cpu_architecture': 9, 'elevated': False,
@@ -57,7 +57,7 @@ def test_half_installed_pc_is_partial_not_installed():
 def test_preconditions_no_install_step_can_create_block(changes, blocker):
     report = check.evaluate(facts(**changes))
     assert report['can_install'] is False and blocker in report['blockers'] and report['status'] == 'blocked'
-    assert report['next_steps'] and report['next_steps'][0].startswith('Устраните')
+    assert report['next_steps'] and report['next_steps'][0] == 'check.fix'
 
 
 def test_low_but_usable_disk_is_a_warning_only():

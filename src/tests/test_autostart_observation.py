@@ -1,9 +1,15 @@
-from types import SimpleNamespace
+import sys
 
 import pytest
 
 from test_reset import paths
-from claude_reset import strict_guard as guard, uac_request as uac
+from claude_reset.errors import SafetyError
+from claude_reset.network import autostart
+from claude_reset.elevation import request as uac
+from claude_reset.elevation import claims
+from claude_reset.windows import tasks
+from claude_reset import config
+from scripted import Strict
 
 
 @pytest.mark.parametrize('change, expected', [
@@ -20,16 +26,16 @@ from claude_reset import strict_guard as guard, uac_request as uac
     (lambda xml: '<!DOCTYPE Task><Task/>', 'unknown'),
     (lambda xml: 'x' * 65537, 'unknown'),
 ])
-def test_exact_definition_snapshot(monkeypatch, change, expected):
-    xml = guard._task_xml('controller.exe', 'report.json', 'fixture-user')
-    monkeypatch.setattr(guard, 'ps_json', lambda script: {'xml': change(xml)})
-    assert guard.autostart_task_definition(xml) == expected
+def test_exact_definition_snapshot(change, expected):
+    xml = autostart.task_xml('controller.exe', 'report.json', 'fixture-user')
+    scheduler = Strict(xml=lambda name: tasks.xml(name, query=lambda script: {'xml': change(xml)}))
+    assert autostart.task_definition(xml, scheduler=scheduler) == expected
 
 
 @pytest.mark.parametrize('failure', [False, True])
-def test_definition_adapter_uses_exact_fake_com_lookup(monkeypatch, failure):
-    from claude_reset.windows import ps_json
-    xml = guard._task_xml('controller.exe', 'report.json', 'fixture-user')
+def test_definition_adapter_uses_exact_fake_com_lookup(failure):
+    from claude_reset.windows.system import ps_json
+    xml = autostart.task_xml('controller.exe', 'report.json', 'fixture-user')
     fixture = '''
     function New-Object {
         param($ComObject)
@@ -53,54 +59,45 @@ def test_definition_adapter_uses_exact_fake_com_lookup(monkeypatch, failure):
     def run(script):
         return ps_json("$expected='" + xml.replace("'", "''") + "'; $fail=$"
                        + str(failure).lower() + ';' + fixture + script)
-    monkeypatch.setattr(guard, 'ps_json', run)
-    assert guard.autostart_task_definition(xml) == ('unknown' if failure else 'matching')
+    scheduler = Strict(xml=lambda name: tasks.xml(name, query=run))
+    assert autostart.task_definition(xml, scheduler=scheduler) == ('unknown' if failure else 'matching')
 
 
 @pytest.mark.parametrize('definition', ['matching', 'different', 'unknown'])
 def test_install_does_not_accept_task_name_alone(paths, tmp_path, monkeypatch, definition):
     source = tmp_path / 'source.exe'
     source.write_bytes(b'fixture')
-    monkeypatch.setattr(guard.sys, 'frozen', True, raising=False)
-    monkeypatch.setattr(guard.sys, 'executable', str(source))
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(sys, 'executable', str(source))
     monkeypatch.setenv('USERDOMAIN', 'fixture')
     monkeypatch.setenv('USERNAME', 'user')
-    monkeypatch.setattr(guard, 'autostart_directory', lambda: tmp_path / 'installed')
-    calls = []
-    def run(argv, **kwargs):
-        calls.append(argv)
-        assert '/Create' in argv
-        return SimpleNamespace(returncode=0)
-    monkeypatch.setattr(guard.subprocess, 'run', run)
-    def inspect(xml):
-        assert '--strict-guard-serve' in xml
-        assert str(tmp_path / 'installed' / 'ClaudeReset.exe') in xml
-        return definition
-    monkeypatch.setattr(guard, 'autostart_task_definition', inspect)
+    created = []
+    def registered(name):
+        return {'matching': created[-1], 'different': '<Task/>', 'unknown': None}[definition]
+    scheduler = Strict(create=lambda name, xml: created.append(xml), xml=registered)
     request = uac.prepare(paths, 'autostart')
-    result = guard.autostart_install(paths, tmp_path / 'report.json', request_id=request.request_id)
+    result = autostart.install(paths, tmp_path / 'report.json', request_id=request.request_id, scheduler=scheduler,
+                               folder=tmp_path / 'installed')
     assert result['registered'] is (definition == 'matching')
     assert result['definition_state'] == definition
-    assert len(calls) == 1
-    assert uac.blocked(paths)
+    assert len(created) == 1 and '--strict-guard-serve' in created[0]
+    assert str(tmp_path / 'installed' / 'ClaudeReset.exe') in created[0]
+    assert claims.blocked(paths)
 
 
-@pytest.mark.parametrize('query_code', [1, 5, 1722])
-def test_failed_query_preserves_all_installed_files(paths, tmp_path, monkeypatch, query_code):
+def test_failed_query_preserves_all_installed_files(paths, tmp_path):
     target = tmp_path / 'installed'
     target.mkdir()
-    names = ['ClaudeReset.exe', guard.RUNNER_NAME, 'ClaudeReset.exe.old-1']
+    names = ['ClaudeReset.exe', config.RUNNER_EXE, 'ClaudeReset.exe.old-1']
     for name in names:
         (target / name).write_bytes(b'fixture')
-    monkeypatch.setattr(guard, 'autostart_directory', lambda: target)
-    monkeypatch.setattr(guard.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=query_code))
-    monkeypatch.setattr(guard, 'ps_json', lambda *a: {'state': 'unknown'})
     request = uac.prepare(paths, 'autostart-off')
-    result = guard.autostart_remove(paths, tmp_path / 'report.json', request_id=request.request_id)
+    result = autostart.remove(paths, tmp_path / 'report.json', request_id=request.request_id,
+                              scheduler=Strict(delete=None, lookup='unknown'), folder=target)
     assert all((target / name).read_bytes() == b'fixture' for name in names)
     assert result['task_present_after'] is None
     assert result['program_removed'] is False
-    assert uac.blocked(paths)
+    assert claims.blocked(paths)
 
 
 @pytest.mark.parametrize('row, expected', [
@@ -109,17 +106,15 @@ def test_failed_query_preserves_all_installed_files(paths, tmp_path, monkeypatch
     ({}, 'unknown'), ({'state': False}, 'unknown'),
     ({'state': 'ERROR: task not found'}, 'unknown'),
 ])
-def test_structured_task_observation(monkeypatch, row, expected):
-    monkeypatch.setattr(guard, 'ps_json', lambda script: row)
-    assert guard.autostart_task_state() == expected
+def test_structured_task_observation(row, expected):
+    assert tasks.lookup(config.CONTROLLER_TASK, query=lambda script: row) == expected
 
 
-@pytest.mark.parametrize('error', [OSError(), ValueError(), guard.SafetyError('private')])
-def test_failed_task_observation_is_unknown(monkeypatch, error):
+@pytest.mark.parametrize('error', [OSError(), ValueError(), SafetyError('private')])
+def test_failed_task_observation_is_unknown(error):
     def fail(script):
         raise error
-    monkeypatch.setattr(guard, 'ps_json', fail)
-    assert guard.autostart_task_state() == 'unknown'
+    assert tasks.lookup(config.CONTROLLER_TASK, query=fail) == 'unknown'
 
 
 @pytest.mark.parametrize('stage, code, expected', [
@@ -127,8 +122,8 @@ def test_failed_task_observation_is_unknown(monkeypatch, error):
     ('task', -2147024891, 'unknown'), ('task', -2147023174, 'unknown'),
     ('connect', -2147024894, 'unknown'), ('folder', -2147024894, 'unknown'),
 ])
-def test_powershell_exact_lookup_with_fake_com(monkeypatch, stage, code, expected):
-    from claude_reset.windows import ps_json
+def test_powershell_exact_lookup_with_fake_com(stage, code, expected):
+    from claude_reset.windows.system import ps_json
     # Execute the actual adapter, replacing COM construction before it can run.
     fixture = '''
     function New-Object {
@@ -155,27 +150,25 @@ def test_powershell_exact_lookup_with_fake_com(monkeypatch, stage, code, expecte
     '''
     def run(script):
         return ps_json(f"$stage='{stage}'; $code={code}; " + fixture + script)
-    monkeypatch.setattr(guard, 'ps_json', run)
-    assert guard.autostart_task_state() == expected
+    scheduler = Strict(lookup=lambda name: tasks.lookup(name, query=run))
+    assert autostart.task_state(scheduler=scheduler) == expected
 
 
 @pytest.mark.parametrize('state', ['present', 'absent'])
 @pytest.mark.parametrize('has_executable', [True, False])
-def test_removal_requires_absent_and_checks_runner(paths, tmp_path, monkeypatch, state, has_executable):
+def test_removal_requires_absent_and_checks_runner(paths, tmp_path, state, has_executable):
     target = tmp_path / 'installed'
     target.mkdir()
-    names = [guard.RUNNER_NAME, 'ClaudeReset.exe.old-1']
+    names = [config.RUNNER_EXE, 'ClaudeReset.exe.old-1']
     if has_executable:
         names.append('ClaudeReset.exe')
     for name in names:
         (target / name).write_bytes(b'fixture')
-    monkeypatch.setattr(guard, 'autostart_directory', lambda: target)
-    monkeypatch.setattr(guard.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=1))
-    monkeypatch.setattr(guard, 'ps_json', lambda script: {'state': state})
     request = uac.prepare(paths, 'autostart-off')
-    result = guard.autostart_remove(paths, tmp_path / 'report.json', request_id=request.request_id)
+    result = autostart.remove(paths, tmp_path / 'report.json', request_id=request.request_id,
+                              scheduler=Strict(delete=None, lookup=state), folder=target)
     assert result['program_removed'] is (state == 'absent')
     assert result['task_present_after'] is (state == 'present')
     for name in names:
         assert (target / name).exists() is (state == 'present')
-    assert uac.blocked(paths)
+    assert claims.blocked(paths)

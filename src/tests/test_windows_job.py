@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import time
 import pytest
-from claude_reset.windows_job import OwnedJob
+from claude_reset.windows.job import OwnedJob
 from claude_reset.safeio import SafetyError
 
 
@@ -29,7 +29,8 @@ def test_child_cannot_execute_before_job_assignment_and_environment_is_clean(tmp
         assert job.running() and job.start_utc_ticks>0 and not marker.exists()
         job.resume()
         deadline=time.monotonic()+5
-        while not marker.exists() and time.monotonic()<deadline: time.sleep(.01)
+        # The child creates the marker before it writes it: wait for the text, not only for the file.
+        while not (marker.exists() and marker.read_text()) and time.monotonic()<deadline: time.sleep(.01)
         assert marker.read_text()=='clean'
         with pytest.raises(SafetyError): job.resume()
     finally: job.close()

@@ -6,7 +6,7 @@ import sys
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
-from claude_reset.install_service_security import Reader
+from claude_reset.windows.service_security import Reader
 
 
 if __name__=='__main__':

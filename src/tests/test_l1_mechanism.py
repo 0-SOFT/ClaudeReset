@@ -3,8 +3,9 @@ import threading
 
 import pytest
 
-from claude_reset import l1_mechanism as mech
-from claude_reset import strict_guard
+from claude_reset.network import l1_mechanism as mech
+from claude_reset.network import controller
+from claude_reset import config
 
 CLOSED = {'tcp_v4': '10013', 'tcp_v6': '10013', 'tcp_backend': '10013', 'tcp_controller': '10013', 'tcp_gate': '10013'}
 OPEN = dict(CLOSED, tcp_gate='connected', proxy_https='200')
@@ -52,7 +53,7 @@ def test_direct_backend_carries_a_connect_through_the_real_relay():
             connection.sendall(b'SINK:' + connection.recv(16))
     threading.Thread(target=answer, daemon=True).start()
     backend = mech.DirectBackend(0).start()
-    relay = strict_guard.create_transport(f'http://127.0.0.1:{backend.port}', lambda stream: True, port=0)
+    relay = controller.create_transport(f'http://127.0.0.1:{backend.port}', lambda stream: True, port=0)
     threading.Thread(target=relay.serve, daemon=True).start()
     try:
         with socket.create_connection(('127.0.0.1', relay.port), timeout=3) as client:
@@ -81,18 +82,16 @@ def test_direct_backend_refuses_anything_but_connect():
         backend.close()
 
 
-def test_preconditions_name_the_missing_package_and_busy_ports(monkeypatch):
-    from claude_reset import package_isolation
-    monkeypatch.setattr(package_isolation, 'installed', lambda *a, **k: None)
-    monkeypatch.setattr(mech, 'connect', lambda host, port, timeout=2.0: 'connected' if port == 25082 else 'refused')
-    errors = mech.precondition_errors()
+def test_preconditions_name_the_missing_package_and_busy_ports():
+    from test_package_isolation import Windows
+    errors = mech.precondition_errors(probe=lambda host, port, timeout=2.0: 'connected' if port == 25082 else 'refused',
+                                      runner=Windows())
     assert any(e.startswith('package_not_registered') for e in errors)
     assert any(e.startswith('port_25082_in_use') for e in errors) and not any('25080' in e for e in errors)
 
 
-def test_preconditions_are_empty_on_a_ready_pc(monkeypatch):
-    from claude_reset import netguard, package_isolation
-    monkeypatch.setattr(package_isolation, 'installed',
-                        lambda *a, **k: (netguard.OWNED_PACKAGE[0], 'ClaudeReset.NetworkIsolation_1.0.0.0_neutral__79st3xwgefr0c', package_isolation.PUBLISHER))
-    monkeypatch.setattr(mech, 'connect', lambda host, port, timeout=2.0: 'ConnectionRefusedError')
-    assert mech.precondition_errors() == []
+def test_preconditions_are_empty_on_a_ready_pc():
+    from claude_reset.network import package_isolation
+    from test_package_isolation import FAMILY, FULL, Windows
+    windows = Windows((FAMILY, FULL, package_isolation.PUBLISHER))
+    assert mech.precondition_errors(probe=lambda host, port, timeout=2.0: 'ConnectionRefusedError', runner=windows) == []

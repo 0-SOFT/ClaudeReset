@@ -5,8 +5,8 @@ import json
 import subprocess
 import pytest
 from claude_reset.safeio import SafetyError
-from claude_reset.windows_pin import PinnedFile
-from claude_reset.install_signature import inspect_signature
+from claude_reset.windows.pin import PinnedFile
+from claude_reset.windows.authenticode import inspect_signature
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('prepare_release_catalog', ROOT/'tools/prepare_release_catalog.py')

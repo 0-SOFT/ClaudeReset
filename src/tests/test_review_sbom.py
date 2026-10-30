@@ -98,7 +98,7 @@ def test_bounded_embedded_runtime_inventory(tmp_path,monkeypatch,fault):
     from types import SimpleNamespace
     import zlib
     from PyInstaller.archive import readers
-    from claude_reset.windows_pin import PinnedFile
+    from claude_reset.windows.pin import PinnedFile
     names=['python312.dll','_ssl.pyd','_hashlib.pyd','libcrypto-3.dll','libssl-3.dll','VCRUNTIME140.dll']
     data=b'MZsynthetic-PE';checksum=hashlib.sha256(data).hexdigest()
     metadata=dict(python_runtime_dll_sha256=checksum,

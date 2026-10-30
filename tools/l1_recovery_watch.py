@@ -14,10 +14,10 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from claude_reset.core import Paths
-from claude_reset.l1_recovery import decide, backoff
+from claude_reset.layout import Paths
+from claude_reset.network.l1_recovery import decide, backoff
 from claude_reset.safeio import atomic_json, guarded, SafetyError
-from claude_reset.windows import ps_json
+from claude_reset.windows.system import ps_json
 
 TASK = 'ClaudeReset L1 Controller'
 

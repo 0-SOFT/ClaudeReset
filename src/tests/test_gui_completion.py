@@ -3,7 +3,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset import connections, netguard, proxy_form, remote_backend, wizard
+from claude_reset.network import connections, remote_backend
+from claude_reset.services import proxy as proxy_form, progress as wizard
+from claude_reset import config
+from proxy_fakes import Probe, measured
 
 
 def report(protection='not_installed', **parts):
@@ -12,6 +15,11 @@ def report(protection='not_installed', **parts):
 
 def history(*statuses, collection='complete'):
     return lambda _paths: {'collection': collection, 'rows': [{'status': s} for s in statuses]}
+
+
+def folders(tmp_path):
+    """Empty program folders: nothing saved yet."""
+    return SimpleNamespace(state=tmp_path / 'state', local=tmp_path / 'local')
 
 
 def test_wizard_from_zero_points_to_server_first():
@@ -42,26 +50,25 @@ def test_wizard_unreadable_state_is_unknown_not_done():
 @pytest.mark.parametrize('status,expected', [
     ('installed', 'engine_installed'), ('installed_needs_attention', 'engine_needs_attention'),
     ('not_started', 'engine_not_started'), ('failed', 'engine_install_failed')])
-def test_engine_install_maps_installer_status(monkeypatch, status, expected):
-    monkeypatch.setattr(remote_backend, 'load', lambda _: None)
+def test_engine_install_maps_installer_status(tmp_path, status, expected):
     calls = []
     fake = lambda paths, profile, archive=None: calls.append((profile, archive)) or {
         'status': status, 'error': 'SafetyError: C:/Users/someone/engine'}
-    result = proxy_form.install_engine('paths', 'profile.json', 'engine.zip', install=fake)
+    result = proxy_form.install_engine(folders(tmp_path), 'profile.json', 'engine.zip', install=fake)
     assert result == {'status': expected} and calls == [('profile.json', 'engine.zip')]
 
 
-def test_engine_install_refused_while_remote_proxy_saved(monkeypatch):
-    monkeypatch.setattr(remote_backend, 'load', lambda _: {'adapter': 'socks5'})
-    result = proxy_form.install_engine('paths', 'profile.json', install=lambda *a, **k: pytest.fail('installed'))
+def test_engine_install_refused_while_remote_proxy_saved(tmp_path):
+    paths = folders(tmp_path)
+    remote_backend.save(paths, proxy_form.ProxyDraft('8.8.8.8', 1080).profile)
+    result = proxy_form.install_engine(paths, 'profile.json', install=lambda *a, **k: pytest.fail('installed'))
     assert result == {'status': 'engine_remote_profile_saved'}
 
 
-def test_engine_install_exception_text_stays_private(monkeypatch):
-    monkeypatch.setattr(remote_backend, 'load', lambda _: None)
+def test_engine_install_exception_text_stays_private(tmp_path):
     def boom(*_a, **_k):
         raise RuntimeError('secret-password at C:/Users/someone')
-    assert proxy_form.install_engine('paths', 'profile.json', install=boom) == {'status': 'engine_install_failed'}
+    assert proxy_form.install_engine(folders(tmp_path), 'profile.json', install=boom) == {'status': 'engine_install_failed'}
 
 
 def test_remove_backend_removes_engine_then_remote_profile():
@@ -78,16 +85,13 @@ def test_remove_backend_refused_while_relay_open_keeps_remote_profile():
     assert result == {'status': 'backend_remove_refused'} and calls == []
 
 
-def test_first_engine_check_proposes_exit_without_saved_profile(monkeypatch):
-    monkeypatch.setattr(connections, 'load', lambda _: None)
-    monkeypatch.setattr(netguard, 'status', lambda _: {'passed': True})
-    monkeypatch.setattr(connections, 'measure', lambda url: {'status': 'measured', 'exit_ip': '9.9.9.9'})
-    saved = []
-    monkeypatch.setattr(connections, 'save', lambda paths, profile: saved.append(profile))
-    assert proxy_form.LocalBackendDraft('paths').check() == {'status': 'proxy_confirmation_required'}
-    draft = proxy_form.LocalBackendDraft('paths', first=True)
+def test_first_engine_check_proposes_exit_without_saved_profile(tmp_path):
+    paths = folders(tmp_path)
+    probe = Probe(backend_status={'passed': True}, measure_local=measured('9.9.9.9'))
+    assert proxy_form.LocalBackendDraft(paths, probe=probe).check() == {'status': 'proxy_confirmation_required'}
+    draft = proxy_form.LocalBackendDraft(paths, first=True, probe=probe)
     assert draft.check() == {'status': 'proxy_checked'}
-    assert draft.expected['local_proxy'] == netguard.PROXY_URL
+    assert draft.expected['local_proxy'] == config.BACKEND_URL
     assert draft.expected['expected_exit_ips'] == ['9.9.9.9']
-    assert draft.save('paths') == {'status': 'proxy_confirmation_required'} and not saved
-    assert draft.save('paths', confirmed=True)['status'] == 'proxy_saved' and len(saved) == 1
+    assert draft.save(paths) == {'status': 'proxy_confirmation_required'} and connections.load(paths) is None
+    assert draft.save(paths, confirmed=True)['status'] == 'proxy_saved' and connections.load(paths) == draft.expected

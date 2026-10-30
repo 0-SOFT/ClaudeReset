@@ -2,7 +2,7 @@
 import struct
 import zlib
 
-from claude_reset import brand
+from claude_reset.ui import brand
 
 
 def decode(data):

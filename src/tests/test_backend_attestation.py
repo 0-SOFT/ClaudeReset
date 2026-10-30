@@ -1,6 +1,6 @@
 import json
 import pytest
-from claude_reset.backend_attestation import inspect_sing_box
+from claude_reset.backend.attestation import inspect_sing_box
 from claude_reset.safeio import SafetyError
 
 

@@ -1,6 +1,6 @@
 import pytest
-from claude_reset.service_store import validate_acl
-from claude_reset.gateway_reservation import Reservation, service_descriptor
+from claude_reset.backend.service_store import validate_acl
+from claude_reset.network.gateway_reservation import Reservation, service_descriptor
 from claude_reset.safeio import SafetyError
 
 

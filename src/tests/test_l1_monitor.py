@@ -1,6 +1,6 @@
 import json
 
-from claude_reset import l1_monitor as monitor
+from claude_reset.network import l1_monitor as monitor
 
 
 def failed(status):

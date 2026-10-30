@@ -9,7 +9,7 @@ import argparse
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
-from claude_reset.windows import ps_json
+from claude_reset.windows.system import ps_json
 from claude_reset.safeio import guarded
 
 

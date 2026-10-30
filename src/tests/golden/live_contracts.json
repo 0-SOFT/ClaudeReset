@@ -1,0 +1,1459 @@
+{
+ "command_line": {
+  "exclusive_groups": [
+   [
+    "apply",
+    "audit",
+    "backend_import",
+    "backend_list",
+    "backend_status",
+    "code_extra_apply",
+    "code_extra_plan",
+    "code_extra_recover",
+    "connection_check",
+    "connection_save",
+    "cowork_export",
+    "cowork_recover",
+    "cowork_reset",
+    "desktop_key_apply",
+    "desktop_key_plan",
+    "desktop_key_verify",
+    "isolation_audit",
+    "l1_accept",
+    "l1_backend_install",
+    "l1_backend_remove",
+    "l1_check",
+    "l1_install",
+    "l1_package_register",
+    "l1_package_register_serve",
+    "l1_package_remove",
+    "l1_package_remove_serve",
+    "l1_remove",
+    "l1_restart",
+    "l1_revoke",
+    "l1_status",
+    "native_selftest",
+    "network_guard_filters",
+    "network_guard_launch",
+    "network_guard_probe",
+    "network_guard_status",
+    "privacy_audit",
+    "record_verification",
+    "recover",
+    "resume",
+    "state_inspect",
+    "state_select",
+    "strict_guard_autostart",
+    "strict_guard_autostart_off",
+    "strict_guard_autostart_off_serve",
+    "strict_guard_autostart_serve",
+    "strict_guard_close",
+    "strict_guard_plan",
+    "strict_guard_probe",
+    "strict_guard_remove",
+    "strict_guard_remove_serve",
+    "strict_guard_serve",
+    "strict_guard_start",
+    "strict_guard_status",
+    "verification_template",
+    "verify_run"
+   ]
+  ],
+  "options": [
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "apply",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--apply"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "audit",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--audit"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "backend_import",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--backend-import"
+    ],
+    "type": "Path"
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "backend_list",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--backend-list"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "backend_status",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--backend-status"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "code_extra_apply",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--code-extra-apply"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "code_extra_plan",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--code-extra-plan"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "code_extra_recover",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--code-extra-recover"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "'code,vscode,chrome'",
+    "dest": "components",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--components"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "confirm_l1_limits",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--confirm-l1-limits"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "connection_check",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--connection-check"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "connection_save",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--connection-save"
+    ],
+    "type": "Path"
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "cowork_export",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--cowork-export"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "cowork_recover",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--cowork-recover"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "cowork_reset",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--cowork-reset"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "desktop_key_apply",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--desktop-key-apply"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "desktop_key_plan",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--desktop-key-plan"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "desktop_key_verify",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--desktop-key-verify"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "engine_archive",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--engine-archive"
+    ],
+    "type": "Path"
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "exclude_vscode_extension",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--exclude-vscode-extension"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "expert",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--expert"
+    ],
+    "type": null
+   },
+   {
+    "action": "_HelpAction",
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "help",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--help",
+     "-h"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "include_router_proxy",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--include-router-proxy"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "include_work",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--include-work"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "isolation_audit",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--isolation-audit"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_accept",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--l1-accept"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "l1_backend_install",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--l1-backend-install"
+    ],
+    "type": "Path"
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_backend_remove",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--l1-backend-remove"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_check",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--l1-check"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_install",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--l1-install"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_package_register",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--l1-package-register"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_package_register_serve",
+    "hidden": true,
+    "nargs": 0,
+    "options": [
+     "--l1-package-register-serve"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_package_remove",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--l1-package-remove"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_package_remove_serve",
+    "hidden": true,
+    "nargs": 0,
+    "options": [
+     "--l1-package-remove-serve"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_remove",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--l1-remove"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_restart",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--l1-restart"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_revoke",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--l1-revoke"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "l1_status",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--l1-status"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "native_selftest",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--native-selftest"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "network_guard_filters",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--network-guard-filters"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": [
+     "chrome",
+     "vscode"
+    ],
+    "const": "None",
+    "default": "None",
+    "dest": "network_guard_launch",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--network-guard-launch"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "network_guard_probe",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--network-guard-probe"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "network_guard_status",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--network-guard-status"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "policy",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--policy"
+    ],
+    "type": "Path"
+   },
+   {
+    "action": "_StoreAction",
+    "choices": [
+     "compatible",
+     "strict"
+    ],
+    "const": "None",
+    "default": "'compatible'",
+    "dest": "privacy",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--privacy"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "privacy_audit",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--privacy-audit"
+    ],
+    "type": null
+   },
+   {
+    "action": "_AppendAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "profile",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--profile"
+    ],
+    "type": null
+   },
+   {
+    "action": "_AppendAction",
+    "choices": null,
+    "const": "None",
+    "default": "[]",
+    "dest": "project",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--project"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "protect_vscode_extension",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--protect-vscode-extension"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "record_verification",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--record-verification"
+    ],
+    "type": "Path"
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "recover",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--recover"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "reinstall_controller",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--reinstall-controller"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "report",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--report"
+    ],
+    "type": "Path"
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "resume",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--resume"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "server_step_complete",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--server-step-complete"
+    ],
+    "type": null
+   },
+   {
+    "action": "_AppendAction",
+    "choices": null,
+    "const": "None",
+    "default": "[]",
+    "dest": "source_entry",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--source-entry"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "state_inspect",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--state-inspect"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "state_root",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--state-root"
+    ],
+    "type": "Path"
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "state_select",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--state-select"
+    ],
+    "type": "Path"
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_autostart",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-autostart"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_autostart_off",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-autostart-off"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_autostart_off_serve",
+    "hidden": true,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-autostart-off-serve"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_autostart_serve",
+    "hidden": true,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-autostart-serve"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_close",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-close"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_plan",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-plan"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_probe",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-probe"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_remove",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-remove"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_remove_serve",
+    "hidden": true,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-remove-serve"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_serve",
+    "hidden": true,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-serve"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_start",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-start"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "strict_guard_status",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--strict-guard-status"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "uac_request_id",
+    "hidden": true,
+    "nargs": null,
+    "options": [
+     "--uac-request-id"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreTrueAction",
+    "choices": null,
+    "const": "True",
+    "default": "False",
+    "dest": "uninstall",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--uninstall"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "verification_template",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--verification-template"
+    ],
+    "type": null
+   },
+   {
+    "action": "_StoreAction",
+    "choices": null,
+    "const": "None",
+    "default": "None",
+    "dest": "verify_run",
+    "hidden": false,
+    "nargs": null,
+    "options": [
+     "--verify-run"
+    ],
+    "type": null
+   },
+   {
+    "action": "_VersionAction",
+    "choices": null,
+    "const": "None",
+    "default": "'==SUPPRESS=='",
+    "dest": "version",
+    "hidden": false,
+    "nargs": 0,
+    "options": [
+     "--version"
+    ],
+    "type": null
+   }
+  ]
+ },
+ "documents": {
+  "backend_profile": {
+   "adapter": "sing_box_vless_reality_v1",
+   "config": {
+    "inbounds": [
+     {
+      "listen": "127.0.0.1",
+      "listen_port": 1080,
+      "tag": "local-any-provider",
+      "type": "socks"
+     }
+    ],
+    "log": {
+     "disabled": true
+    },
+    "outbounds": [
+     {
+      "server": "1.1.1.1",
+      "server_port": 443,
+      "tag": "chosen-by-user",
+      "tls": {
+       "enabled": true,
+       "reality": {
+        "enabled": true,
+        "public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "short_id": "aabb"
+       },
+       "server_name": "fixture.invalid",
+       "utls": {
+        "enabled": true,
+        "fingerprint": "chrome"
+       }
+      },
+      "type": "vless",
+      "uuid": "12345678-1234-1234-1234-123456789abc"
+     }
+    ],
+    "route": {
+     "final": "chosen-by-user"
+    }
+   },
+   "engine_path": "C:\\Runtime\\engine.exe",
+   "engine_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "engine_version": "1.12.0",
+   "schema": 1
+  },
+  "backend_summary": {
+   "adapter": "sing_box_vless_reality_v1",
+   "client_network_opened": false,
+   "config_sha256": "83474645ff0f34001d06134ac8eb3a1ae565922daf1a1befce322c8972df033d",
+   "declared_engine_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "declared_engine_version": "1.12.0",
+   "engine_build_verified": false,
+   "full_tunnel_verified": false,
+   "profile_id": "profile-id",
+   "runtime_engine_verified": false,
+   "schema": 1,
+   "selected": false,
+   "status": "imported_inactive"
+  },
+  "connection_saved_bytes": "{\"schema\": 1, \"local_proxy\": \"http://127.0.0.1:25080\", \"router_proxy\": null, \"expected_exit_ips\": [\"1.1.1.1\", \"2606:4700:4700::1111\"]}",
+  "consent_file": "l1-consent.dpapi",
+  "consent_required": [
+   "cowork_guest_boundary",
+   "dns_service_delegation",
+   "mcp_children"
+  ],
+  "gateway_profile_bytes": "{\"backend_port\":1080,\"controller_path\":\"C:\\\\Runtime\\\\ClaudeResetRuntime.exe\",\"controller_pid\":4321,\"controller_sha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"controller_start_utc_ticks\":639285408000000001,\"engine_config_path\":\"C:\\\\Tunnel\\\\config.json\",\"engine_config_sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"engine_path\":\"C:\\\\Tunnel\\\\engine.exe\",\"engine_pid\":1234,\"engine_sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"engine_start_utc_ticks\":639285408000000000,\"generation\":\"dddddddddddddddddddddddddddddddd\",\"listen_port\":25083,\"protocol\":\"socks5\",\"schema\":2}",
+  "remote_backend": {
+   "adapter": "socks5_remote_v1",
+   "host": "1.1.1.1",
+   "password": "secret",
+   "port": 1080,
+   "schema": 1,
+   "username": "user"
+  },
+  "remote_backend_kind": "remote_socks5",
+  "sing_box_inspection": {
+   "adapter": "sing_box_vless_reality_v1",
+   "client_network_opened": false,
+   "config_sha256": "83474645ff0f34001d06134ac8eb3a1ae565922daf1a1befce322c8972df033d",
+   "full_tunnel_verified": false,
+   "inbound_protocol": "socks",
+   "passed": true,
+   "runtime_engine_verified": false,
+   "schema": 1,
+   "single_encrypted_route": true,
+   "status": "supported_static_configuration"
+  }
+ },
+ "l1_install_fixture_state": {
+  "blockers": [],
+  "can_install": true,
+  "checks": [
+   {
+    "id": "backend_task",
+    "status": "ok"
+   },
+   {
+    "id": "backend_listening",
+    "status": "ok"
+   },
+   {
+    "id": "connection_profile",
+    "status": "ok"
+   },
+   {
+    "id": "isolation_package",
+    "status": "missing"
+   },
+   {
+    "id": "consent",
+    "status": "missing"
+   },
+   {
+    "id": "controller_task",
+    "status": "missing"
+   },
+   {
+    "id": "controller_files",
+    "status": "missing"
+   },
+   {
+    "id": "relay_listening",
+    "status": "missing"
+   }
+  ],
+  "protection": "partial"
+ },
+ "l1_install_report_installed": {
+  "calls": [
+   "check",
+   "package",
+   "consent:True",
+   "build",
+   "autostart",
+   "start",
+   "wait_relay",
+   "check"
+  ],
+  "report": {
+   "action": "l1_install",
+   "extension_protection": "excluded",
+   "finished": true,
+   "schema": 1,
+   "status": "installed",
+   "steps": [
+    {
+     "protection": "partial",
+     "status": "ok",
+     "step": "check"
+    },
+    {
+     "mode": "excluded",
+     "status": "ok",
+     "step": "extension_decision"
+    },
+    {
+     "status": "ok",
+     "step": "package"
+    },
+    {
+     "status": "ok",
+     "step": "consent"
+    },
+    {
+     "folder": "dist",
+     "status": "ok",
+     "step": "build"
+    },
+    {
+     "status": "ok",
+     "step": "autostart"
+    },
+    {
+     "controller_state": "relay_open",
+     "level": "L1_owner_accepted_limits",
+     "status": "ok",
+     "step": "start"
+    },
+    {
+     "protection": "installed",
+     "status": "ok",
+     "step": "verify"
+    }
+   ]
+  }
+ },
+ "l1_install_report_needs_consent": {
+  "calls": [
+   "check",
+   "package",
+   "consent:False"
+  ],
+  "report": {
+   "action": "l1_install",
+   "extension_protection": "excluded",
+   "finished": true,
+   "retry_blocked": true,
+   "schema": 1,
+   "status": "needs_consent",
+   "steps": [
+    {
+     "protection": "partial",
+     "status": "ok",
+     "step": "check"
+    },
+    {
+     "mode": "excluded",
+     "status": "ok",
+     "step": "extension_decision"
+    },
+    {
+     "status": "ok",
+     "step": "package"
+    },
+    {
+     "next": "Прочитайте список и повторите с --confirm-l1-limits",
+     "open_boundaries": [
+      "dns_service_delegation",
+      "cowork_guest_boundary"
+     ],
+     "status": "stopped",
+     "step": "consent"
+    }
+   ]
+  }
+ },
+ "l1_install_report_package_failed": {
+  "calls": [
+   "check",
+   "package"
+  ],
+  "report": {
+   "action": "l1_install",
+   "extension_protection": "excluded",
+   "finished": true,
+   "retry_blocked": true,
+   "schema": 1,
+   "status": "package_failed",
+   "steps": [
+    {
+     "protection": "partial",
+     "status": "ok",
+     "step": "check"
+    },
+    {
+     "mode": "excluded",
+     "status": "ok",
+     "step": "extension_decision"
+    },
+    {
+     "detail": "failed",
+     "error": "refused",
+     "status": "stopped",
+     "step": "package"
+    }
+   ]
+  }
+ },
+ "wfp_keys": {
+  "deny": [
+   "a007cb98-2871-537c-a23b-73493ea6c075",
+   "fa32e3e3-526b-5fde-91e8-bb546d325cc6",
+   "82e60da2-8f5d-50d6-8ec4-3f1109ce35dc",
+   "3dacf7c9-d037-5e61-8684-eeb7ba8a6774",
+   "38bbcdbe-7181-50b5-83de-5392ff357002",
+   "f6b89bbd-86e4-5f34-b907-33ae67f37bf2",
+   "47f9cc12-6e2e-56e6-8f7c-3b046d44155d",
+   "0e86609a-1eed-51fb-ac74-f04dbe74c203",
+   "2451c25f-78d0-575c-af48-f3add2ccd3b4",
+   "bde6b6bd-e5a8-5592-bcd4-724cbfbb4636",
+   "28613569-5e02-55c1-937c-e7d0e037cac3",
+   "a7092be2-419c-515d-9f3f-b106018153a6"
+  ],
+  "gateway_namespace": "6ef4230b-dc85-4fb8-9d93-34d274553a8a",
+  "gateway_sublayer": "e3e3b231-d881-5f53-8b3b-3d303858634d",
+  "owned_filters": [
+   [
+    "desktop",
+    "desktop_executable",
+    "v4",
+    "ac85b5db-bb9c-528f-9368-ee62ae314d73",
+    "9698a6e2-745c-55cd-8376-347866815c2e",
+    "ClaudeReset-Snow-Desktop-v1",
+    "app",
+    null
+   ],
+   [
+    "desktop",
+    "desktop_package",
+    "v4",
+    "1029a0c7-055c-5457-a8e1-c1e08829511e",
+    "9698a6e2-745c-55cd-8376-347866815c2e",
+    "ClaudeReset-Snow-Desktop-v1",
+    "package",
+    "Claude_pzs8sxrjxfjjc"
+   ],
+   [
+    "native_cli",
+    "vscode_cli",
+    "v4",
+    "c8201cee-3e6d-5df2-bb59-2996c2d962c3",
+    "38040a2d-be44-5264-9a3f-655d4da437da",
+    "ClaudeReset-Code-Snow-v1",
+    "app",
+    null
+   ],
+   [
+    "native_cli",
+    "standalone_cli",
+    "v4",
+    "dacf7875-acea-5186-bd37-1a1422479362",
+    "38040a2d-be44-5264-9a3f-655d4da437da",
+    "ClaudeReset-Code-Snow-v1",
+    "app",
+    null
+   ],
+   [
+    "owned_package",
+    "owned_package",
+    "v4",
+    "52072bd5-1cb8-57a6-ac3e-cb8ad496a7b3",
+    "738bb19e-a4f5-524b-a599-874d0f7e0f5d",
+    "ClaudeReset-Owned-Identity-Snow-v1",
+    "package",
+    "ClaudeReset.NetworkIsolation_79st3xwgefr0c"
+   ],
+   [
+    "desktop",
+    "desktop_executable",
+    "v6",
+    "19f10179-fcd9-58a6-b69a-5e59fa1fc770",
+    "9698a6e2-745c-55cd-8376-347866815c2e",
+    "ClaudeReset-Snow-Desktop-v1",
+    "app",
+    null
+   ],
+   [
+    "desktop",
+    "desktop_package",
+    "v6",
+    "528967b9-6b8f-58fe-9b16-effd11fce460",
+    "9698a6e2-745c-55cd-8376-347866815c2e",
+    "ClaudeReset-Snow-Desktop-v1",
+    "package",
+    "Claude_pzs8sxrjxfjjc"
+   ],
+   [
+    "native_cli",
+    "vscode_cli",
+    "v6",
+    "4400148c-e5b4-59fd-9d9c-78b66a4fbdeb",
+    "38040a2d-be44-5264-9a3f-655d4da437da",
+    "ClaudeReset-Code-Snow-v1",
+    "app",
+    null
+   ],
+   [
+    "native_cli",
+    "standalone_cli",
+    "v6",
+    "637d7e1e-5c6f-5f7d-ad9a-2deafe3b6d3e",
+    "38040a2d-be44-5264-9a3f-655d4da437da",
+    "ClaudeReset-Code-Snow-v1",
+    "app",
+    null
+   ],
+   [
+    "owned_package",
+    "owned_package",
+    "v6",
+    "82068a83-c006-5767-adeb-d67f57d98b6e",
+    "738bb19e-a4f5-524b-a599-874d0f7e0f5d",
+    "ClaudeReset-Owned-Identity-Snow-v1",
+    "package",
+    "ClaudeReset.NetworkIsolation_79st3xwgefr0c"
+   ]
+  ],
+  "pinned_endpoint": "500f38c0-911e-58e1-9972-b826c8297b3a",
+  "relay": [
+   "b6eddfba-b83c-5380-ac52-cc3daa586ec7",
+   "031438aa-5e97-511d-9332-f096fc6ff767",
+   "c03b66ad-473d-5e9c-beaa-0355a7eb2f3d"
+  ],
+  "service_endpoints": [
+   "1e8ea396-0b6c-5963-a2af-4b0837c946f7",
+   "d7fd6ed7-0501-5ff9-91fc-f421392e757f",
+   "4651db91-0732-5d9e-a24e-34ee8150898f",
+   "c2648845-7a8b-55e4-bee1-ca93a4e60c63"
+  ],
+  "strict_layers": {
+   "connect_v4": "c38d57d1-05a7-4c33-904f-7fbceee60e82",
+   "connect_v6": "4a72393b-319f-44bc-84c3-ba54dcb3b6b4",
+   "recv_v4": "e1cd9fe7-f4b5-4273-96c0-592e487b8650",
+   "recv_v6": "a3b42c97-9f04-4672-b87e-cee9c483257f"
+  },
+  "strict_sublayer": "384543d6-6b40-51c7-93d8-b471b48eae82"
+ }
+}

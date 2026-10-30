@@ -1,7 +1,7 @@
 """Shown and saved results carry no secrets, exit addresses, user name or home folder."""
 import json
 
-from claude_reset.public_view import HIDDEN, redact
+from claude_reset.ui.public_view import HIDDEN, redact
 
 HOME, USER = r'C:\Users\alice', 'alice'
 

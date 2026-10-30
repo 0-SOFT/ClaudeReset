@@ -5,11 +5,11 @@ import os
 from pathlib import Path
 import stat
 import tempfile
-import ctypes
 
-
-class SafetyError(RuntimeError):
-    pass
+from .errors import SafetyError, UnsafePathError
+from .windows.folders import drive_type
+import re
+from pathlib import PureWindowsPath
 
 
 def local_volume(path: Path) -> Path:
@@ -18,10 +18,7 @@ def local_volume(path: Path) -> Path:
     if not path.is_absolute() or str(path).startswith(('\\\\', '//')):
         raise SafetyError('An absolute local volume path is required')
     if os.name == 'nt':
-        api = ctypes.WinDLL('kernel32', use_last_error=True)
-        api.GetDriveTypeW.argtypes = [ctypes.c_wchar_p]
-        api.GetDriveTypeW.restype = ctypes.c_uint
-        if api.GetDriveTypeW(path.anchor) not in (2, 3, 6):
+        if drive_type(path.anchor) not in (2, 3, 6):
             raise SafetyError('Remote, missing or unknown volumes are not supported')
     return path
 
@@ -37,27 +34,27 @@ def reparse(path: Path) -> bool:
 def guarded(path: Path, root: Path, *, allow_root: bool = False) -> Path:
     """Reject traversal and *all* ancestor reparse points before resolving."""
     if '..' in Path(path).parts or '..' in Path(root).parts:
-        raise SafetyError('Traversal is not allowed')
+        raise UnsafePathError('Traversal is not allowed')
     # Windows aliases, ADS and device names can escape a textual path boundary.
     if os.name == 'nt':
         reserved = {'CON', 'PRN', 'AUX', 'NUL', *(f'COM{i}' for i in range(1, 10)), *(f'LPT{i}' for i in range(1, 10))}
         for part in (*Path(path).parts[1:], *Path(root).parts[1:]):
             if ':' in part or part.endswith((' ', '.')) or part.split('.')[0].upper() in reserved:
-                raise SafetyError('Unsafe Windows path alias')
+                raise UnsafePathError('Unsafe Windows path alias')
         if str(path).startswith(('\\\\?\\', '\\\\.\\')):
-            raise SafetyError('Device namespace paths are forbidden')
+            raise UnsafePathError('Device namespace paths are forbidden')
     path, root = Path(os.path.abspath(path)), Path(os.path.abspath(root))
     try:
         path.relative_to(root)
     except ValueError:
-        raise SafetyError('Target is outside the approved root') from None
+        raise UnsafePathError('Target is outside the approved root') from None
     if path == root and not allow_root:
-        raise SafetyError('Deleting the approved root itself is forbidden')
+        raise UnsafePathError('Deleting the approved root itself is forbidden')
     for ancestor in (path, *path.parents, root, *root.parents):
         if reparse(ancestor):
-            raise SafetyError('Reparse point or symbolic link in the target path')
+            raise UnsafePathError('Reparse point or symbolic link in the target path')
     if not path.resolve().is_relative_to(root.resolve()):
-        raise SafetyError('Resolved target is outside the approved root')
+        raise UnsafePathError('Resolved target is outside the approved root')
     return path
 
 
@@ -82,12 +79,12 @@ def tree_entries(path: Path, root: Path):
         with os.scandir(directory) as children:
             for child in children:
                 if os.name == 'nt' and (':' in child.name or child.name.endswith((' ','.')) or child.name.split('.')[0].upper() in reserved):
-                    raise SafetyError('Unsafe Windows path alias')
+                    raise UnsafePathError('Unsafe Windows path alias')
                 # DirEntry.stat on Windows can return stale directory timestamps
                 # and a zero inode from FindFirstFile. Fetch fresh identity.
                 info = os.stat(child.path, follow_symlinks=False)
                 if stat.S_ISLNK(info.st_mode) or getattr(info,'st_file_attributes',0) & 0x400:
-                    raise SafetyError('Reparse point or symbolic link in the target path')
+                    raise UnsafePathError('Reparse point or symbolic link in the target path')
                 item = Path(child.path)
                 yield item, info
                 if stat.S_ISDIR(info.st_mode):
@@ -172,3 +169,22 @@ def atomic_bytes(path: Path, content: bytes, root: Path):
 
 def atomic_json(path: Path, value, root: Path):
     atomic_bytes(path, json.dumps(value, ensure_ascii=False, indent=2).encode('utf-8'), root)
+
+
+def local_path(value):
+    if (not isinstance(value,str) or not re.match(r'\A[A-Za-z]:\\',value)
+            or len(value)>32760 or any(c in value for c in '\r\n\0/') or ':' in value[2:]
+            or any(part in ('.','..') or part.endswith((' ','.')) for part in value[3:].split('\\'))
+            or any(re.match(r'(?i)\A(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|\Z)', part) for part in value[3:].split('\\'))
+            or str(PureWindowsPath(value)).casefold()!=value.casefold()):
+        raise SafetyError('A canonical local absolute file path is required')
+    if not PureWindowsPath(value).name:
+        raise SafetyError('A file path is required')
+    return value
+
+
+def read_json(path: Path, root: Path, limit=1_000_000):
+    path = guarded(path, root)
+    if path.stat().st_size > limit:
+        raise SafetyError('Guard metadata file is too large', code='guard_metadata_large')
+    return json.loads(path.read_text('utf-8-sig'))

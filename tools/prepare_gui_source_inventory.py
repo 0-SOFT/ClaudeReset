@@ -10,7 +10,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from claude_reset.help_docs import DOCUMENTS, LICENSE_DOCUMENTS
+from claude_reset.ui.help_docs import DOCUMENTS, LICENSE_DOCUMENTS
 
 
 def sha(data):

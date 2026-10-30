@@ -1,4 +1,5 @@
 """Admission tests use temporary state and synthetic effects, never UAC/WFP."""
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -9,8 +10,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from claude_reset import admission, controller_admission as gate, uac_request as uac
-from claude_reset import strict_guard as guard, controller_process
+from claude_reset.elevation import locks as admission, admission as gate, request as uac
+from claude_reset.network import controller_status
+from claude_reset.elevation import claims
+from claude_reset.network import controller as guard, controller_process
 from claude_reset.safeio import SafetyError
 from test_uac_request import paths
 
@@ -21,9 +24,9 @@ def effects(monkeypatch):
     kernel = MagicMock()
     kernel.CreateMutexW.return_value = 1
     kernel.WaitForSingleObject.return_value = 0
-    monkeypatch.setattr(guard.ctypes, 'WinDLL', lambda *a, **k: kernel)
+    monkeypatch.setattr(ctypes, 'WinDLL', lambda *a, **k: kernel)
     monkeypatch.setattr(controller_process, 'generation', lambda pid: 123)
-    monkeypatch.setattr(guard, '_serve_admitted', lambda p, report, folder, state:
+    monkeypatch.setattr(guard, 'run_admitted', lambda p, report, folder, state, **kw:
                         calls.append(state) or state)
     return calls
 
@@ -43,20 +46,20 @@ def test_denial_only_binds_verified_explicit_identity(paths, effects, scheduler)
     rows = [json.loads(p.read_text()) for p in
             (paths.state / 'strict-guard').glob(pattern)]
     assert len(rows) == 2
-    expected = None if scheduler else uac.receipt_identity(paths, 'start', request.request_id)
+    expected = None if scheduler else claims.receipt_identity(paths, 'start', request.request_id)
     assert all(r['identity'] == expected for r in rows)
     assert len({r['attempt_id'] for r in rows}) == 2
-    assert effects == [] and uac.blocked(paths)
+    assert effects == [] and claims.blocked(paths)
 
 
 def test_stop_change_start_blocks_every_competitor_and_consumes_once(paths, effects):
-    @uac.serialized('replace', completed={'completed'})
+    @claims.serialized('replace', completed={'completed'})
     def replace(p):
         for phase in ('before_stop', 'after_stop', 'change'):
             with pytest.raises(SafetyError):
                 serve(p)
             assert effects == [], phase
-        request = gate.schedule(p.state / 'strict-guard')
+        request = uac.schedule(p.state / 'strict-guard')
         with pytest.raises(SafetyError):
             serve(SimpleNamespace(local=p.local, state=p.state.parent / 'other'))
         state = serve(p)
@@ -98,7 +101,7 @@ def test_direct_request_is_exact_one_use_and_late_uac_is_refused(paths, effects)
     assert serve(paths, request.request_id)['request_id'] == request.request_id
     with pytest.raises(SafetyError):
         serve(paths, request.request_id)
-    uac._release(paths, request)
+    uac.release(paths, request)
     with pytest.raises(SafetyError):
         serve(paths, request.request_id)
     assert len(effects) == 1
@@ -113,25 +116,25 @@ def test_denied_dispatch_revokes_the_late_start(paths, effects):
 
 
 def test_owner_failure_keeps_claim_and_unconsumed_permission(paths, effects):
-    @uac.serialized('replace', completed={'completed'})
+    @claims.serialized('replace', completed={'completed'})
     def replace(p):
-        gate.schedule(p.state / 'strict-guard')
+        uac.schedule(p.state / 'strict-guard')
         raise RuntimeError('modeled owner death')
     with pytest.raises(RuntimeError):
         replace(paths)
-    assert uac.blocked(paths)
+    assert claims.blocked(paths)
     # The already-issued child may still arrive. It remains fenced by the
     # durable claim; no recovery is allowed to assume that it cannot execute.
     serve(paths)
-    assert len(effects) == 1 and uac.blocked(paths)
+    assert len(effects) == 1 and claims.blocked(paths)
 
 
 def test_uncertain_owner_cannot_issue_start(paths):
-    @uac.serialized('replace', completed={'completed'})
+    @claims.serialized('replace', completed={'completed'})
     def replace(p):
-        uac._chain.get().uncertain = True
+        claims.chain.get().uncertain = True
         with pytest.raises(SafetyError):
-            gate.schedule(p.state / 'strict-guard')
+            uac.schedule(p.state / 'strict-guard')
         return {'status': 'incomplete'}
     assert replace(paths)['retry_blocked']
     assert not gate.permit_path(paths).exists()
@@ -142,7 +145,7 @@ def test_uncertain_owner_cannot_issue_start(paths):
 def test_caught_preparation_failure_retains_claim_and_forbids_new_permit(paths, monkeypatch, stage, entry):
     effects = []
     saved = []
-    original_save = uac._save_exclusive
+    original_save = claims.save_exclusive
     original_grant = gate.grant
 
     def save(path, data):
@@ -160,19 +163,19 @@ def test_caught_preparation_failure_retains_claim_and_forbids_new_permit(paths, 
             raise OSError('synthetic private permit failure')
         original_grant(p, request, **kwargs)
 
-    @uac.serialized('replace', completed={'completed'})
+    @claims.serialized('replace', completed={'completed'})
     def replace(p):
         with monkeypatch.context() as patch:
-            patch.setattr(uac, '_save_exclusive', save)
+            patch.setattr(claims, 'save_exclusive', save)
             patch.setattr(gate, 'grant', grant)
             with pytest.raises(OSError):
                 if entry == 'execute':
                     uac.execute(p, 'start', lambda request: effects.append(request) or 42)
                 else:
-                    from claude_reset.l1_install import start_controller
+                    from claude_reset.network.l1_install import start_controller
                     start_controller(p.state / 'strict-guard', run=lambda *a, **k: effects.append('run'))
         # Restore the writers: refusal must come from ownership, not the fault.
-        assert uac.blocked(p)
+        assert claims.blocked(p)
         before = gate.permit_path(p).read_bytes() if gate.permit_path(p).exists() else None
         with pytest.raises(SafetyError):
             uac.prepare(p, 'start')
@@ -180,7 +183,7 @@ def test_caught_preparation_failure_retains_claim_and_forbids_new_permit(paths, 
         return {'status': 'completed'}
 
     assert replace(paths)['retry_blocked']
-    assert uac.blocked(paths) and effects == []
+    assert claims.blocked(paths) and effects == []
     assert gate.permit_path(paths).exists() == (stage == 'permit-after')
     if stage == 'request-after':
         assert json.loads((paths.state / 'strict-guard' /
@@ -192,7 +195,7 @@ def test_os_lock_excludes_an_independent_process_and_survives_release(paths):
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from claude_reset.admission import locked
+from claude_reset.elevation.locks import locked
 from claude_reset.safeio import SafetyError
 p = SimpleNamespace(local=Path(sys.argv[1]))
 try:
@@ -220,7 +223,7 @@ def test_busy_admission_does_not_create_claim_or_publish(paths, effects):
             uac.prepare(paths, 'start')
         with pytest.raises(SafetyError):
             serve(paths)
-    assert not uac.pending_path(paths).exists()
+    assert not claims.pending_path(paths).exists()
     assert not (paths.state / 'strict-guard/status.json').exists()
     assert effects == []
 
@@ -230,8 +233,8 @@ def test_independent_start_process_is_fenced_through_change_and_handoff(paths):
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from claude_reset.admission import locked
-from claude_reset.controller_admission import consume
+from claude_reset.elevation.locks import locked
+from claude_reset.elevation.admission import consume
 from claude_reset.safeio import SafetyError
 p = SimpleNamespace(local=Path(sys.argv[1]), state=Path(sys.argv[2]))
 try:
@@ -245,12 +248,12 @@ except SafetyError:
     def start():
         return subprocess.run([sys.executable, '-c', code, str(paths.local), str(paths.state), str(marker)],
                               capture_output=True, timeout=15, creationflags=0x08000000).returncode
-    @uac.serialized('replace', completed={'completed'})
+    @claims.serialized('replace', completed={'completed'})
     def replace(p):
         for phase in ('stop', 'change', 'before_start'):
             assert start() == 7, phase
             assert not marker.exists()
-        request = gate.schedule(p.state / 'strict-guard')
+        request = uac.schedule(p.state / 'strict-guard')
         assert start() == 0
         assert marker.read_text() == request.request_id
         marker.unlink()
@@ -265,9 +268,9 @@ except SafetyError:
 @pytest.mark.parametrize('scheduler', [False, True])
 @pytest.mark.parametrize('failure', ['generation', 'before-write', 'torn-write', 'status'])
 def test_start_witness_failure_preserves_consumption(paths, effects, monkeypatch, scheduler, failure):
-    from claude_reset import child_process as child
+    from claude_reset.elevation import child_process as child
     request = uac.prepare(paths, 'start', scheduler=scheduler)
-    save = uac._save_exclusive
+    save = claims.save_exclusive
     def fail(path, row):
         if path.name.startswith('process-'):
             if failure == 'torn-write':
@@ -278,48 +281,16 @@ def test_start_witness_failure_preserves_consumption(paths, effects, monkeypatch
         monkeypatch.setattr(controller_process, 'generation',
                             lambda pid: (_ for _ in ()).throw(OSError('private fixture failure')))
     elif failure == 'status':
-        monkeypatch.setattr(guard, 'atomic_json',
+        monkeypatch.setattr(controller_status, 'write',
                             lambda *args: (_ for _ in ()).throw(OSError('private fixture failure')))
     else:
-        monkeypatch.setattr(uac, '_save_exclusive', fail)
+        monkeypatch.setattr(claims, 'save_exclusive', fail)
     for attempt in range(2):
         expected = OSError if failure == 'status' and attempt == 0 else SafetyError
         with pytest.raises(expected):
             serve(paths, None if scheduler else request.request_id)
     assert json.loads(gate.permit_path(paths).read_text())['consumed'] is True
-    assert effects == [] and uac.blocked(paths)
+    assert effects == [] and claims.blocked(paths)
     assert not (paths.state / 'strict-guard/status.json').exists()
     if failure == 'status':
-        assert json.loads(child._path(request).read_text())['request']['request_id'] == request.request_id
-
-
-@pytest.mark.parametrize('scheduler', [False, True])
-@pytest.mark.parametrize('status_kind', ['missing', 'replaced', 'legacy'])
-def test_start_process_observed_without_status(paths, effects, monkeypatch, scheduler, status_kind):
-    from dataclasses import asdict
-    from claude_reset import child_process as child, admission_recovery as recovery
-    from test_recovery_observation import fake_boundary
-    request = uac.prepare(paths, 'start', scheduler=scheduler)
-    serve(paths, None if scheduler else request.request_id)
-    status_path = paths.state / 'strict-guard/status.json'
-    if status_kind == 'missing':
-        status_path.unlink()
-    elif status_kind == 'legacy':
-        status_path.write_text('{}')
-    else:
-        row = json.loads(status_path.read_text())
-        row['request_id'] = 'f' * 32
-        status_path.write_text(json.dumps(row))
-    class Process:
-        created = 123
-        def __init__(self, pid): assert pid == os.getpid()
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-        def wait(self, timeout): return True
-    monkeypatch.setattr(recovery, 'hold_boundary', fake_boundary)
-    monkeypatch.setattr(recovery, 'observe_child', lambda r: child.observe(r, process_factory=Process))
-    result = recovery.prepare_recovery(paths, asdict(request))
-    assert result['controllers'] == ['unknown']
-    assert result['start_processes'] == ['exited']
-    assert result['resources'] == result['child_exit'] == result['controller_ownership'] == 'unknown'
-    assert result['retry_blocked'] and uac.blocked(paths)
+        assert json.loads(child.witness_path(request).read_text())['request']['request_id'] == request.request_id

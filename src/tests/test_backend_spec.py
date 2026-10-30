@@ -2,7 +2,7 @@ import hashlib
 import json
 import pytest
 from test_backend_attestation import config
-from claude_reset import backend_spec as b
+from claude_reset.backend import spec as b
 from claude_reset.safeio import SafetyError
 
 

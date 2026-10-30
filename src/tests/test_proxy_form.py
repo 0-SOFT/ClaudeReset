@@ -4,29 +4,29 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset import connections, proxy_form, remote_backend as rb
+from claude_reset.network import connections, remote_backend as rb
+from claude_reset.services import proxy as proxy_form
 from claude_reset.safeio import SafetyError
+from proxy_fakes import ACCEPTED, REACHABLE, Probe, working
 from test_remote_backend import FakeSocks, loopback_open, HOST, USER, PASSWORD
 from test_gui_shell import ui, Widget, button
+from dialog_fakes import script
 
 
-def draft():
-    return proxy_form.ProxyDraft(HOST, '1080', USER, PASSWORD)
+def draft(probe=None):
+    return proxy_form.ProxyDraft(HOST, '1080', USER, PASSWORD, probe=probe)
 
 
 @pytest.mark.parametrize('accepted', [True, False])
 def test_check_real_socks_login_connect_and_refusal(monkeypatch, accepted):
     server = FakeSocks(password=PASSWORD if accepted else 'different')
-    monkeypatch.setattr(rb, 'reachable', lambda _: {'status': 'reachable'})
     def handshake(profile):
         try:
             loopback_open(server, auth=rb.auth_of(profile)).close()
             return {'ok': True}
         except SafetyError:
             return {'ok': False}
-    monkeypatch.setattr(rb, 'handshake_test', handshake)
-    monkeypatch.setattr(rb, 'measure_exit', lambda _: {'status': 'measured', 'exit_ip': HOST})
-    value = draft()
+    value = draft(working(HOST, handshake=handshake))
     try:
         result = value.check()
         assert result['status'] == ('proxy_checked' if accepted else 'proxy_login_or_connect_refused')
@@ -37,15 +37,13 @@ def test_check_real_socks_login_connect_and_refusal(monkeypatch, accepted):
 
 
 @pytest.mark.parametrize('mode', ['unreachable', 'measurement', 'exception'])
-def test_check_failures_have_no_private_data(monkeypatch, mode, capsys):
-    monkeypatch.setattr(rb, 'reachable', lambda _: {'status': 'unreachable' if mode == 'unreachable' else 'reachable'})
-    monkeypatch.setattr(rb, 'handshake_test', lambda _: {'ok': True})
+def test_check_failures_have_no_private_data(mode, capsys):
     def measure(_):
         if mode == 'exception':
             raise ValueError(f'{USER} {PASSWORD} {HOST}')
         return {'status': 'failed', 'error': PASSWORD}
-    monkeypatch.setattr(rb, 'measure_exit', measure)
-    value = draft()
+    value = draft(Probe(reachable={'status': 'unreachable' if mode == 'unreachable' else 'reachable'},
+                        handshake=ACCEPTED, measure_exit=measure))
     result = value.check()
     assert value.expected is None
     assert result['status'] != 'proxy_checked'
@@ -56,11 +54,8 @@ def test_check_failures_have_no_private_data(monkeypatch, mode, capsys):
 @pytest.mark.parametrize('exit_ip', [HOST, '2606:4700:4700::1111'])
 def test_save_confirmation_and_dpapi_leak_check(monkeypatch, tmp_path, capsys, exit_ip):
     paths = SimpleNamespace(state=tmp_path / 'state', local=tmp_path / 'local')
-    value = draft()
+    value = draft(working(exit_ip))
     assert value.save(paths, confirmed=True)['status'] == 'proxy_confirmation_required'
-    monkeypatch.setattr(rb, 'reachable', lambda _: {'status': 'reachable'})
-    monkeypatch.setattr(rb, 'handshake_test', lambda _: {'ok': True})
-    monkeypatch.setattr(rb, 'measure_exit', lambda _: {'status': 'measured', 'exit_ip': exit_ip})
     assert value.check()['status'] == 'proxy_checked'
     assert value.save(paths)['status'] == 'proxy_confirmation_required'
     assert not paths.state.exists()
@@ -85,7 +80,7 @@ def test_ipv6_peer_refused_without_disclosing_address():
 @pytest.mark.parametrize('valid', [True, False])
 def test_vless_window_import_dpapi_and_refusal(ui, monkeypatch, tmp_path, capsys, valid):
     from test_backend_profiles import profile
-    from claude_reset import backend_profiles
+    from claude_reset.backend import profiles as backend_profiles
     value = profile()
     outbound = value['config']['outbounds'][0]
     secrets = [outbound['uuid'], outbound['server'], outbound['tls']['server_name'],
@@ -96,7 +91,7 @@ def test_vless_window_import_dpapi_and_refusal(ui, monkeypatch, tmp_path, capsys
     source.parent.mkdir()
     source.write_text(json.dumps(value))
     ui.paths.state = tmp_path / 'saved'
-    monkeypatch.setattr('claude_reset.app.filedialog.askopenfilename', lambda **_: str(source))
+    script(ui, askopenfilename=lambda **_: str(source))
     outcomes = []
     def run(action, callback):
         result = action()
@@ -115,7 +110,7 @@ def test_vless_window_import_dpapi_and_refusal(ui, monkeypatch, tmp_path, capsys
         if file.is_file():
             public += file.read_bytes()
     assert all(secret.encode() not in public for secret in secrets + [PASSWORD, USER])
-    monkeypatch.setattr('claude_reset.app.filedialog.askopenfilename', lambda **_: '')
+    script(ui, askopenfilename='')
     button('Импортировать VLESS+Reality (JSON)').options['command']()
     assert len(outcomes) == 1
 
@@ -128,14 +123,12 @@ def test_invalid_form_has_safe_exception():
 
 @pytest.mark.parametrize('mode', ['refused', 'dropped'])
 def test_connect_refusal_and_disconnect_never_measure_or_save(monkeypatch, tmp_path, mode):
-    from claude_reset import tunnel_transport
+    from claude_reset.network import tunnel_transport
     server = FakeSocks(connect_reply=5 if mode == 'refused' else 0, drop_connect=mode == 'dropped')
     original = tunnel_transport.open_stream
     monkeypatch.setattr(tunnel_transport, 'open_stream', lambda url, host, port, verify, **kw:
                         original(f'socks5://127.0.0.1:{server.port}', host, port, verify, auth=kw['auth']))
-    monkeypatch.setattr(rb, 'reachable', lambda _: {'status': 'reachable'})
-    monkeypatch.setattr(rb, 'measure_exit', lambda _: pytest.fail('must not measure after refusal'))
-    value = draft()
+    value = draft(Probe(reachable=REACHABLE, handshake=rb.handshake_test))   # measuring after a refusal fails the test
     try:
         assert value.check() == {'status': 'proxy_login_or_connect_refused'}
         assert value.expected is None
@@ -151,14 +144,12 @@ def test_window_buttons_and_stale_draft(ui, monkeypatch):
         ui.proxy_fields[key].set(value)
     assert any(w.options.get('textvariable') is ui.proxy_fields['password'] and
                w.options.get('show') == '*' for w in Widget.all)
-    monkeypatch.setattr(rb, 'reachable', lambda _: {'status': 'reachable'})
-    monkeypatch.setattr(rb, 'handshake_test', lambda _: {'ok': True})
-    monkeypatch.setattr(rb, 'measure_exit', lambda _: {'status': 'measured', 'exit_ip': HOST})
+    ui.probe = working(HOST)
     ui.run = lambda action, callback: callback(action())
     button('Проверить прокси').options['command']()
     assert ui.proxy_draft.expected
     confirms = []
-    monkeypatch.setattr('claude_reset.app.messagebox.askyesno', lambda *args: confirms.append(args) or True)
+    script(ui, askyesno=lambda *args: confirms.append(args) or True)
     button('Сохранить прокси и выход').options['command']()
     assert confirms and rb.load(ui.paths)['password'] == PASSWORD
     ui.proxy_fields['password'].set('changed')
@@ -181,19 +172,18 @@ def test_http_form_check_save_and_leak(ui, monkeypatch, tmp_path, capsys, accept
         assert address == (HOST, 8080)
         return original(('127.0.0.1', int(server.url.rsplit(':', 1)[1])), *args, **kwargs)
     monkeypatch.setattr(socket, 'create_connection', route)
-    monkeypatch.setattr(rb, 'reachable', lambda _: {'status': 'reachable'})
     measured = []
     def measure(profile):
         measured.append(profile)
         return {'status': 'measured', 'exit_ip': HOST}
-    monkeypatch.setattr(rb, 'measure_exit', measure)
+    ui.probe = Probe(reachable=REACHABLE, handshake=rb.handshake_test, measure_exit=measure)
     ui.proxy_type.set('http')
     for key, value in zip(('host', 'port', 'username', 'password'),
                           (HOST, '8080', USER if authenticated else '', PASSWORD if authenticated else '')):
         ui.proxy_fields[key].set(value)
     ui.run = lambda action, callback: callback(action())
     confirms = []
-    monkeypatch.setattr('claude_reset.app.messagebox.askyesno', lambda *args: confirms.append(True) or True)
+    script(ui, askyesno=lambda *args: confirms.append(True) or True)
     try:
         button('Проверить прокси').options['command']()
         button('Сохранить прокси и выход').options['command']()
@@ -232,7 +222,8 @@ def test_http_form_refuses_unsupported_type_or_login(changes):
 @pytest.mark.parametrize('existing', [None, b'previous encrypted profile'])
 def test_saving_the_pair_rolls_back_the_proxy_when_the_exit_fails(tmp_path, monkeypatch, existing):
     from types import SimpleNamespace
-    from claude_reset import connections, proxy_form, remote_backend
+    from claude_reset.network import connections, remote_backend
+    from claude_reset.services import proxy as proxy_form
     paths = SimpleNamespace(state=tmp_path)
     target = remote_backend.path_of(paths)
     if existing is not None:

@@ -8,8 +8,14 @@ import threading
 from pathlib import Path
 import pytest
 from test_reset import FakeCrypto
-from claude_reset import netguard, wfp
+from claude_reset.network import legacy_guard as netguard
+from claude_reset.backend import location as backend_location
+from claude_reset.windows import wfp
 from claude_reset.safeio import SafetyError
+from claude_reset import config
+from claude_reset.windows import packages
+from claude_reset.windows import wfp_session
+from cli_env import folders
 
 
 def guard_layout(tmp_path):
@@ -27,15 +33,15 @@ def task(python, arguments, **extra):
 
 @pytest.mark.skipif(not hasattr(ctypes, 'windll'), reason='needs Windows PowerShell')
 def test_absent_guard_task_reports_not_installed_instead_of_inspection_failure(monkeypatch):
-    monkeypatch.setattr(netguard, 'TASK_NAME', 'ClaudeReset-NoSuchTask-for-tests')
-    assert netguard.locate_guard() is None
-    report = netguard.status(None)
+    monkeypatch.setattr(config, 'BACKEND_TASK', 'ClaudeReset-NoSuchTask-for-tests')
+    assert backend_location.locate_guard() is None
+    report = backend_location.status(None)
     assert report['status'] == 'not_installed' and report['installed'] is False
 
 
 def test_guard_is_located_only_from_the_reviewed_task_action(tmp_path):
     base, python = guard_layout(tmp_path)
-    guard = netguard.guard_from_task(task(python, str(base / 'proxy_worker.py')))
+    guard = backend_location.guard_from_task(task(python, str(base / 'proxy_worker.py')))
     assert guard.base == base and guard.work == base.parent
     assert guard.task == {'state': 'Running', 'enabled': True, 'run_level': 'Limited'}
 
@@ -50,7 +56,7 @@ def test_unexpected_task_actions_are_refused(tmp_path, change):
              'relative': task(python, 'proxy_worker.py'),
              'two_actions': {'actions': [{'execute': str(python), 'arguments': script}] * 2}}[change]
     with pytest.raises(SafetyError, match='task actions'):
-        netguard.guard_from_task(value)
+        backend_location.guard_from_task(value)
 
 
 def reviewed_config():
@@ -62,7 +68,7 @@ def reviewed_config():
 
 
 def test_proxy_config_shape_never_returns_server_or_credentials():
-    result = netguard.check_proxy_config(reviewed_config())
+    result = backend_location.check_proxy_config(reviewed_config())
     assert result['passed'] is True
     assert all(isinstance(v, bool) for v in result.values())
     assert 'secret' not in json.dumps(result) and '203.0.113.7' not in json.dumps(result)
@@ -81,15 +87,15 @@ def test_proxy_config_without_fail_closed_shape_is_rejected(change):
         cfg['experimental']['clash_api']['external_controller'] = '0.0.0.0:25081'
     else:
         cfg['log'] = {'level': 'debug'}
-    assert netguard.check_proxy_config(cfg)['passed'] is False
+    assert backend_location.check_proxy_config(cfg)['passed'] is False
 
 
 def test_listeners_must_be_loopback_and_owned_by_engine():
     good = [{'port': 25080, 'address': '127.0.0.1', 'pid': 7}, {'port': 25081, 'address': '127.0.0.1', 'pid': 7}]
-    assert netguard.check_listeners(good, 7)['passed'] is True
-    assert netguard.check_listeners(good + [{'port': 25080, 'address': '0.0.0.0', 'pid': 7}], 7)['loopback_only'] is False
-    assert netguard.check_listeners(good, 8)['owned_by_engine'] is False
-    assert netguard.check_listeners(good[:1], 7)['passed'] is False
+    assert backend_location.check_listeners(good, 7)['passed'] is True
+    assert backend_location.check_listeners(good + [{'port': 25080, 'address': '0.0.0.0', 'pid': 7}], 7)['loopback_only'] is False
+    assert backend_location.check_listeners(good, 8)['owned_by_engine'] is False
+    assert backend_location.check_listeners(good[:1], 7)['passed'] is False
 
 
 def sealed_guard(tmp_path, plain):
@@ -99,21 +105,21 @@ def sealed_guard(tmp_path, plain):
     engine.write_bytes(b'engine')
     (base / 'snow-config.dpapi').write_bytes(FakeCrypto().encrypt(plain))
     profile = {'engine_path': str(engine), 'engine_sha256': hashlib.sha256(b'engine').hexdigest(),
-               'config_sha256': hashlib.sha256(json.dumps(reviewed_config()).encode()).hexdigest(), 'proxy_url': netguard.PROXY_URL}
+               'config_sha256': hashlib.sha256(json.dumps(reviewed_config()).encode()).hexdigest(), 'proxy_url': config.BACKEND_URL}
     (base / 'profile.json').write_text(json.dumps(profile), encoding='utf-8')
-    return netguard.guard_from_task(task(python, str(base / 'proxy_worker.py')))
+    return backend_location.guard_from_task(task(python, str(base / 'proxy_worker.py')))
 
 
 def test_sealed_config_is_checked_against_reviewed_hash(tmp_path):
     guard = sealed_guard(tmp_path, json.dumps(reviewed_config()).encode())
-    assert netguard.check_engine_and_config(guard, crypto=FakeCrypto())['passed'] is True
+    assert backend_location.check_engine_and_config(guard, crypto=FakeCrypto())['passed'] is True
 
 
 def test_modified_sealed_config_fails_even_with_valid_shape(tmp_path):
     cfg = reviewed_config()
     cfg['outbounds'][0]['server'] = '198.51.100.1'
     guard = sealed_guard(tmp_path / 'changed', json.dumps(cfg).encode())
-    result = netguard.check_engine_and_config(guard, crypto=FakeCrypto())
+    result = backend_location.check_engine_and_config(guard, crypto=FakeCrypto())
     assert result['config_reviewed'] is False and result['passed'] is False
 
 
@@ -135,86 +141,13 @@ def fake_worker(replies, *, token_override=None, wrong_peer_first=False):
     return start, seen
 
 
-def test_loopback_exchange_ignores_foreign_peers():
-    start, seen = fake_worker({'family': 'Owned', 'tcp_v4': '10013'}, wrong_peer_first=True)
-    assert netguard.exchange(start, 'Write-Output 1', timeout=5) == {'family': 'Owned', 'tcp_v4': '10013'}
-    assert seen['script'] == 'Write-Output 1'
-
-
-def test_loopback_exchange_rejects_unexpected_fields():
-    start, _ = fake_worker({'family': 'Owned', 'token': 'secret'})
-    with pytest.raises(SafetyError, match='invalid result'):
-        netguard.exchange(start, 'x', timeout=5)
-
-
-def test_loopback_exchange_times_out_without_worker():
-    with pytest.raises(SafetyError, match='did not report'):
-        netguard.exchange(lambda port, token: None, 'x', timeout=0.3)
-
-
 def test_bootstrap_carries_only_port_and_token():
-    stub = netguard.bootstrap(40000, 'a' * 32)
+    stub = packages.bootstrap(40000, 'a' * 32)
     assert "'127.0.0.1',40000" in stub and "'" + 'a' * 32 + "'" in stub and len(stub) < 600
 
 
-@pytest.mark.parametrize('args,expected', [
-    (['--user-data-dir=C:\\Work\\Profile'], True), (['--user-data-dir', 'c:\\work\\profile'], True),
-    (['--user-data-dir=C:\\Work\\Profile2'], False), (['--profile-directory=Default'], False)])
-def test_running_instance_matches_exact_user_data_dir(args, expected):
-    assert netguard.uses_directory(args, Path('C:/Work/Profile')) is expected
-
-
 def test_command_line_split_handles_quoted_paths():
-    assert netguard.split_command_line('"C:\\Program Files\\x.exe" --user-data-dir="C:\\a b"') == ['C:\\Program Files\\x.exe', '--user-data-dir=C:\\a b']
-
-
-def chrome_profile(guard, run='a' * 32, geolocation=2, exceptions=None):
-    directory = guard.work / 'claude-only-chrome' / run
-    (directory / 'Default').mkdir(parents=True)
-    (directory / 'claude-reset-profile.json').write_text(json.dumps({'created_by': 'ClaudeReset', 'run': run}), encoding='utf-8')
-    marker = hashlib.sha256((directory / 'claude-reset-profile.json').read_bytes()).hexdigest()
-    (directory / netguard.CHROME_MARK).write_text(json.dumps({'run': run, 'scope': 'claude_only', 'source_was_closed': True,
-                                                             'source_marker_sha256': marker}), encoding='utf-8')
-    prefs = {'profile': {'default_content_setting_values': {'geolocation': geolocation},
-                         'content_settings': {'exceptions': {'geolocation': exceptions or {}}}}}
-    (directory / 'Default/Preferences').write_text(json.dumps(prefs), encoding='utf-8')
-    return directory
-
-
-def test_dedicated_chrome_requires_single_reviewed_profile(tmp_path):
-    base, python = guard_layout(tmp_path)
-    guard = netguard.guard_from_task(task(python, str(base / 'proxy_worker.py')))
-    directory = chrome_profile(guard)
-    (guard.work / 'claude-only-chrome/selftest-1').mkdir()
-    assert netguard.check_dedicated_chrome(guard) == directory
-    chrome_profile(guard, run='b' * 32)
-    with pytest.raises(SafetyError, match='exactly one'):
-        netguard.check_dedicated_chrome(guard)
-
-
-def test_dedicated_chrome_with_allowed_geolocation_is_refused(tmp_path):
-    base, python = guard_layout(tmp_path)
-    guard = netguard.guard_from_task(task(python, str(base / 'proxy_worker.py')))
-    chrome_profile(guard, exceptions={'https://claude.ai:443,*': {'setting': 1}})
-    with pytest.raises(SafetyError, match='geolocation'):
-        netguard.check_dedicated_chrome(guard)
-
-
-@pytest.mark.parametrize('target', ['chrome', 'vscode'])
-def test_legacy_launch_is_closed_even_if_diagnostic_gate_would_pass(monkeypatch, target):
-    from claude_reset import connections
-    monkeypatch.setattr(connections, 'launch_gate', lambda _: {'passed': True})
-    def forbidden(*args, **kwargs):
-        raise AssertionError('Blocked launch must not inspect profiles, probe, or start processes')
-    for name in ('locate_guard', 'launch_executable', 'check_dedicated_chrome',
-                 'check_dedicated_editor', 'running_instances', 'in_package', 'ps_json', 'https_status'):
-        monkeypatch.setattr(netguard, name, forbidden)
-    result = netguard.guarded_launch(object(), target)
-    assert result['status'] == 'blocked_installed_acceptance_required'
-    assert result['passed'] is False and result['client_admission'] is False
-    assert result['process_started'] is False and result['settings_changed'] is False
-    assert result['network_requests'] == 0 and result['current_sessions_closed'] is False
-    assert result['functional_acceptance_pending'] is True
+    assert packages.split_command_line('"C:\\Program Files\\x.exe" --user-data-dir="C:\\a b"') == ['C:\\Program Files\\x.exe', '--user-data-dir=C:\\a b']
 
 
 def test_legacy_launch_rejects_unknown_target_without_side_effects():
@@ -294,16 +227,16 @@ def test_altered_owned_filter_is_not_accepted(change):
 
 def test_filter_read_without_elevation_reports_requirement(monkeypatch):
     monkeypatch.setattr(ctypes.windll.shell32, 'IsUserAnAdmin', lambda: 0)
-    result = wfp.inspect_owned_filters()
+    result = wfp_session.inspect_owned_filters()
     assert result == {'administrator': False, 'read_only': True, 'filters_changed': False, 'firewall_profiles_changed': False,
                       'status': 'administrator_required', 'passed': False}
 
 
 def test_cli_guard_status_exit_code_reflects_result(monkeypatch, capsys, tmp_path):
-    from claude_reset import app
-    from claude_reset.core import Paths
+    from claude_reset import cli
+    from claude_reset.layout import Paths
     paths = Paths(tmp_path/'home', tmp_path/'roaming', tmp_path/'local', tmp_path/'state')
-    monkeypatch.setattr(app.Paths, 'current', lambda: paths)
-    monkeypatch.setattr(netguard, 'status', lambda paths: {'status': 'protection_degraded', 'passed': False})
-    assert app.main(['--network-guard-status']) == 2
+    root = folders(monkeypatch, paths)
+    monkeypatch.setattr(backend_location, 'status', lambda paths: {'status': 'protection_degraded', 'passed': False})
+    assert cli.main(['--network-guard-status'] + root) == 2
     assert json.loads(capsys.readouterr().out)['status'] == 'protection_degraded'

@@ -3,7 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset import privacy_observations as p
+from claude_reset.privacy import observations as p
+from dialog_fakes import Dialogs
 
 
 def journal(tmp_path, hosts):
@@ -59,13 +60,13 @@ def test_partial_keeps_valid_counts(tmp_path):
 
 
 def test_button_and_cancel(tmp_path, monkeypatch):
-    from claude_reset.app import App
+    from claude_reset.ui.expert_window import App
     path = journal(tmp_path, ['claude.ai'])
     shown = []
-    app = SimpleNamespace(run=lambda job, done: done(job()), show_json=shown.append)
-    monkeypatch.setattr('claude_reset.app.filedialog.askopenfilename', lambda **kw: str(path))
+    app = SimpleNamespace(run=lambda job, done: done(job()), show_json=shown.append,
+                          dialogs=Dialogs(askopenfilename=lambda **kw: str(path)))
     App.show_privacy_observations(app)
     assert shown[0]['records'] == 1
-    monkeypatch.setattr('claude_reset.app.filedialog.askopenfilename', lambda **kw: '')
+    app.dialogs.answers['askopenfilename'] = ''
     App.show_privacy_observations(app)
     assert len(shown) == 1

@@ -3,7 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from claude_reset import l1_remove as rem
+from claude_reset.network import l1_remove as rem
+from claude_reset.elevation import claims
+from claude_reset import layout
 
 
 def state(**changes):
@@ -70,7 +72,7 @@ def run(paths, fake):
 
 
 def test_full_removal_runs_in_the_reverse_order_and_clears_the_flag(paths):
-    flag = paths.state / 'strict-guard' / rem.EXCLUDE_FLAG
+    flag = paths.state / 'strict-guard' / layout.EXTENSION_EXCLUDED_FLAG
     flag.parent.mkdir(parents=True)
     flag.write_text('x')
     fake = Fake()
@@ -113,13 +115,13 @@ def test_leftovers_are_reported_not_hidden(paths):
 
 def test_connections_remove_deletes_only_the_saved_profile(tmp_path):
     """Regression (second PC, F2): --l1-remove left connection.dpapi, so it reported removed_with_leftovers."""
-    from claude_reset import connections
+    from claude_reset.network import connections
     state = tmp_path / 'state'
     state.mkdir()
-    (state / connections.PROFILE_FILE).write_bytes(b'x')
+    (state / layout.CONNECTION_PROFILE).write_bytes(b'x')
     (tmp_path / 'my-connection.json').write_text('{"keep": true}')
     paths = types.SimpleNamespace(home=tmp_path, state=state, local=tmp_path / 'local')
-    assert connections.remove(paths) is True and not (state / connections.PROFILE_FILE).exists()
+    assert connections.remove(paths) is True and not (state / layout.CONNECTION_PROFILE).exists()
     assert (tmp_path / 'my-connection.json').exists()
     assert connections.remove(paths) is True                       # already gone is fine
 
@@ -154,7 +156,8 @@ def test_competing_restart_cannot_stop_between_nested_receipts(paths):
     from concurrent.futures import ThreadPoolExecutor
     from dataclasses import asdict
     import json
-    from claude_reset import l1_install, uac_request as uac
+    from claude_reset.network import l1_install
+    from claude_reset.elevation import request as uac
 
     fake = Fake()
     competitor = Fake()
@@ -163,7 +166,7 @@ def test_competing_restart_cannot_stop_between_nested_receipts(paths):
 
     def receipt(operation, **values):
         def dispatch(request):
-            pending_bytes.append(uac.pending_path(paths).read_bytes())
+            pending_bytes.append(claims.pending_path(paths).read_bytes())
             row = dict(asdict(request), finished=True, **values)
             Path(request.receipt).write_text(json.dumps(row), encoding='utf-8')
             return 42
@@ -178,29 +181,29 @@ def test_competing_restart_cannot_stop_between_nested_receipts(paths):
             rejected = pool.submit(l1_install.restart, other, deps=competitor).result()
         assert rejected['status'] == 'pending_elevation'
         assert competitor.calls == []
-        assert uac.pending_path(paths).read_bytes() == pending_bytes[0]
+        assert claims.pending_path(paths).read_bytes() == pending_bytes[0]
         return result
 
     fake.autostart_off = autostart
     fake.remove_filters = lambda _: receipt('remove', removed=True)
     assert run(paths, fake)['status'] == 'removed'
     assert pending_bytes[0] == pending_bytes[1]
-    assert not uac.blocked(paths)
+    assert not claims.blocked(paths)
 
 
 def test_denial_after_stop_retains_outer_claim_and_prevents_reopen(paths):
-    from claude_reset import uac_request as uac
+    from claude_reset.elevation import request as uac
     fake = Fake()
     fake.autostart_off = lambda _: uac.execute(paths, 'autostart-off', lambda request: 5)
     assert run(paths, fake)['status'] == 'autostart_not_removed'
-    assert 'close' in fake.calls and uac.blocked(paths)
+    assert 'close' in fake.calls and claims.blocked(paths)
     second = Fake()
     assert run(paths, second)['status'] == 'pending_elevation'
     assert second.calls == []
 
 
 def test_old_pending_blocks_before_any_effect(paths):
-    from claude_reset import uac_request as uac
+    from claude_reset.elevation import request as uac
     uac.prepare(paths, 'remove')
     fake = Fake()
     assert run(paths, fake)['status'] == 'pending_elevation'
@@ -240,12 +243,12 @@ def test_simultaneous_instances_only_one_reaches_first_stop(paths):
 
 
 def test_closed_relay_with_busy_controller_blocks_removal(paths):
-    from claude_reset import uac_request as uac
+    from claude_reset.elevation import request as uac
     fake = Fake(initial=state(relay_listening='missing'), controller_busy=True)
     result = run(paths, fake)
     assert result['status'] == 'controller_not_stopped'
     assert fake.calls == ['check', 'close', 'wait_gone', 'wait_idle']
-    assert uac.blocked(paths)
+    assert claims.blocked(paths)
 
 
 def test_close_refusal_does_not_continue_removal(paths):

@@ -6,19 +6,19 @@ from pathlib import Path
 import sqlite3
 import subprocess
 import pytest
-from claude_reset.core import Paths, build_plan, Executor, snapshot_memory, restore_memory, recover_memory, validate_memory_bundle
+from claude_reset.layout import Paths
+from claude_reset.reset.planner import build_plan
+from claude_reset.reset.execution import Executor, recover_memory
+from claude_reset.reset.core import snapshot_memory, restore_memory, validate_memory_bundle
 from claude_reset.safeio import SafetyError, guarded, remove_owned, fingerprint
-from claude_reset.services import network_probe, launch_clean_chrome
-from claude_reset.windows import DPAPI, set_istanbul_same_offset
+from claude_reset.reset.new_account import network_probe, launch_clean_chrome
+from claude_reset.windows.system import DPAPI, set_istanbul_same_offset
+from claude_reset.windows.system import DPAPI
 
 
-class FakeCrypto:
-    """Only used by tests; never wired into production launchers."""
-    def encrypt(self, data):
-        return b'TEST-ONLY:' + base64.b64encode(data)
-    def decrypt(self, data):
-        assert data.startswith(b'TEST-ONLY:')
-        return base64.b64decode(data[10:])
+# The tests encrypt with the program's own current-user DPAPI, so code that builds its own crypto reads what
+# the tests wrote; doubles that fail on purpose subclass it.
+FakeCrypto = DPAPI
 
 
 def platform():
@@ -242,7 +242,7 @@ def test_symlink_cannot_escape(paths):
 
 @pytest.mark.skipif(os.name != 'nt', reason='Windows junction')
 def test_windows_junction_is_rejected(paths):
-    from claude_reset.windows import ps_json
+    from claude_reset.windows.system import ps_json
     outside = paths.home.parent / 'junction-target'
     outside.mkdir()
     write(outside / 'keep.txt', 'KEEP')
@@ -261,7 +261,7 @@ def test_windows_junction_is_rejected(paths):
 
 def test_gui_can_render_fixture_plan_without_scanning_live_data(paths, tk_root):
     import tkinter as tk
-    from claude_reset.app import App
+    from claude_reset.ui.expert_window import App
     root = tk.Toplevel(tk_root)  # the run's one Tk interpreter (see conftest.py)
     root.withdraw()
     try:
@@ -310,10 +310,10 @@ def test_alternative_auth_and_custom_roots_block(paths):
 
 def test_account_manager_archives_are_not_treated_as_active_restorers(paths):
     (paths.local / '0-code/accounts').mkdir(parents=True)
-    assert not any('0-code' in x for x in plan_for(paths).blockers)
+    assert not any('plan.account_manager' in x for x in plan_for(paths).blockers)
     state = platform()
     state['account_manager_active'] = True
-    assert any('0-code' in x for x in build_plan(paths, platform_state=state, env={}).blockers)
+    assert any('plan.account_manager' in x for x in build_plan(paths, platform_state=state, env={}).blockers)
 
 
 def test_unparseable_vscode_settings_are_not_overwritten(paths):
@@ -335,7 +335,7 @@ def test_secretstorage_requires_explicit_adapter(paths):
     database(p)
     with sqlite3.connect(p) as db:
         db.execute('insert into ItemTable values (?,?)', ('secret://Anthropic.claude-code', 'secret'))
-    assert any('SecretStorage' in x for x in plan_for(paths, ('vscode',)).blockers)
+    assert any('plan.secret_storage_entry' in x for x in plan_for(paths, ('vscode',)).blockers)
 
 
 def test_tampered_action_target_is_rejected(populated):
@@ -373,25 +373,21 @@ def test_real_dpapi_round_trip():
         crypto.decrypt(b'not a memory archive')
 
 
-def test_timezone_rejects_offset_change(monkeypatch):
+def test_timezone_rejects_offset_change():
     state = platform()
     state['timezone']['offset_minutes'] = 120
-    monkeypatch.setattr('claude_reset.windows.inspect_windows', lambda: state)
-    monkeypatch.setattr('claude_reset.windows.subprocess.run', lambda *a, **k: pytest.fail('Must not change timezone'))
     with pytest.raises(SafetyError):
-        set_istanbul_same_offset()
+        set_istanbul_same_offset(inspect=lambda: state, run=lambda *a, **k: pytest.fail('Must not change timezone'))
 
 
-def test_timezone_uses_only_tzutil_not_clock_change(monkeypatch):
+def test_timezone_uses_only_tzutil_not_clock_change():
     states = [platform(), platform()]
     states[1]['timezone']['id'] = 'Turkey Standard Time'
-    monkeypatch.setattr('claude_reset.windows.inspect_windows', lambda: states.pop(0))
     calls = []
     def fake_run(argv, **kwargs):
         calls.append(argv)
         return subprocess.CompletedProcess(argv, 0)
-    monkeypatch.setattr('claude_reset.windows.subprocess.run', fake_run)
-    result = set_istanbul_same_offset()
+    result = set_istanbul_same_offset(inspect=lambda: states.pop(0), run=fake_run)
     assert calls[0][1:] == ['/s', 'Turkey Standard Time']
     assert result['clock_adjusted'] is False
 

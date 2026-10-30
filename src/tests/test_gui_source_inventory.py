@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from claude_reset import help_docs
+from claude_reset.ui import help_docs
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('gui_source_inventory', ROOT / 'tools/prepare_gui_source_inventory.py')
@@ -14,9 +14,9 @@ inventory = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(inventory)
 
 
-def test_source_inventory_hashes_sbom_and_bundled_help(tmp_path, monkeypatch):
+def test_source_inventory_hashes_sbom_and_bundled_help(tmp_path):
     output = tmp_path / 'review'
-    result = inventory.prepare(ROOT, ['src/claude_reset/help_docs.py'], output)
+    result = inventory.prepare(ROOT, ['src/claude_reset/ui/help_docs.py'], output)
     assert result['release_ready'] is False
     for name, digest in result['sha256'].items():
         assert hashlib.sha256((output / name).read_bytes()).hexdigest() == digest
@@ -32,9 +32,8 @@ def test_source_inventory_hashes_sbom_and_bundled_help(tmp_path, monkeypatch):
             assert hashlib.sha256(data).hexdigest() == row['sha256'] == entry['checksums'][0]['checksumValue']
             assert len(data) == row['bytes']
         archive.extractall(tmp_path / 'unpacked')
-    monkeypatch.setattr(help_docs, 'ROOT', tmp_path / 'unpacked')
     for kind in help_docs.DOCUMENTS:
-        assert help_docs.read_document(kind)[1].strip()
+        assert help_docs.read_document(kind, root=tmp_path / 'unpacked')[1].strip()
 
 
 def test_missing_source_refuses_before_output(tmp_path):

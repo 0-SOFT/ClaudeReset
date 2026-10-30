@@ -1,9 +1,9 @@
 import json
 import pytest
 from test_reset import paths
-from claude_reset.privacy import audit, cli_settings, vscode_settings, desktop_context
+from claude_reset.privacy.inventory import audit, cli_settings, vscode_settings, desktop_context
 from claude_reset.safeio import SafetyError
-from claude_reset.privacy import otel_configuration
+from claude_reset.privacy.inventory import otel_configuration
 
 
 def write(root, name, obj):
@@ -106,7 +106,7 @@ def test_queue_file_is_not_misreported_as_empty_directory(paths):
 
 
 def test_queue_directory_enumeration_is_bounded_even_without_events(paths,monkeypatch):
-    from claude_reset import privacy
+    from claude_reset.privacy import inventory as privacy
     root=paths.local/'fixture-desktop';queue=root/'sentry/queue'
     queue.mkdir(parents=True);info=queue.stat();visited=[]
     def entries(*args):
@@ -143,8 +143,8 @@ def test_explicit_profiles_do_not_scan_other_users_or_unselected_roots(paths):
 
 
 def test_unsafe_report_path_returns_failure_without_secondary_traceback(paths, monkeypatch, capsys):
-    from claude_reset.app import main
-    monkeypatch.setattr('claude_reset.app.Paths.current', lambda: paths)
+    from claude_reset.cli import main
+    monkeypatch.setattr('claude_reset.cli.Paths.current', lambda: paths)
     assert main(['--privacy-audit', '--report', '../SECRET/report.json']) == 1
     output = capsys.readouterr()
     assert 'Traceback' not in output.err and 'SECRET' not in output.err

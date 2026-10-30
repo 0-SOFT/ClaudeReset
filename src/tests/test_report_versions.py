@@ -1,8 +1,10 @@
 """Client-controlled version metadata must not become diagnostic report content."""
+import dataclasses
 import json
 import pytest
 from test_reset import paths, platform, FakeCrypto
-from claude_reset.core import build_plan, Executor
+from claude_reset.reset.planner import build_plan
+from claude_reset.reset.execution import Executor
 
 @pytest.mark.parametrize('field', ['cli_version','extension_versions','desktop_versions'])
 def test_report_rejects_nonversion_metadata(paths,field):
@@ -26,7 +28,7 @@ def test_report_preserves_numeric_versions_without_approving_them(paths):
                          ids=['newline','oversize','object','boolean'])
 def test_report_handles_malformed_version_values(paths,value):
     plan=build_plan(paths,('code',),platform_state=platform(),env={})
-    plan.versions={'cli':value,'extension':[value],'desktop':[value],'SECRET_METADATA':'private'}
+    plan=dataclasses.replace(plan,versions={'cli':value,'extension':[value],'desktop':[value],'SECRET_METADATA':'private'})
     report=plan.redacted()['versions']
     assert report=={'cli':'unknown','extension':['unknown'],'desktop':['unknown']}
 

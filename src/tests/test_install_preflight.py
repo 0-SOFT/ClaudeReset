@@ -1,9 +1,10 @@
 import hashlib
 import json
 import pytest
-from claude_reset import install_preflight as p
+from claude_reset.backend import preflight as p
 from claude_reset.safeio import SafetyError
 from test_install_payload import fixture
+from scripted import Strict
 
 
 @pytest.mark.parametrize('fault',[None,'catalog','signature','inventory','occupied'])
@@ -23,9 +24,8 @@ def test_preflight_keeps_all_files_pinned_and_never_authorizes_installation(tmp_
     def inventory():
         if fault=='inventory':raise SafetyError('query refused')
         return dict(fresh_install_blockers=[dict(code='service_slot_occupied')] if fault=='occupied' else [])
-    monkeypatch.setattr(p,'inspect_release_catalog',catalog)
-    monkeypatch.setattr(p,'inspect_signature',signature);monkeypatch.setattr(p,'inspect_slots',inventory)
-    result=p.inspect_candidate(tmp_path,digest,cat,cat_digest)
+    evidence=Strict(release_catalog=catalog,signature=signature,slots=inventory)
+    result=p.inspect_candidate(tmp_path,digest,cat,cat_digest,evidence=evidence)
     assert calls and result['payload_integrity_verified']
     assert result['status']=='candidate_preflight_blocked' and result['passed'] is False
     assert all(result[name] is False for name in ('installable','client_admission','settings_changed','release_authority_verified','kernel_load_verified'))
@@ -38,10 +38,9 @@ def test_preflight_keeps_all_files_pinned_and_never_authorizes_installation(tmp_
 
 def test_invalid_payload_never_reaches_signature_or_system_inventory(tmp_path,monkeypatch,capsys):
     fixture(tmp_path,monkeypatch)
-    def forbidden(*args):pytest.fail('Invalid package must be refused first')
-    monkeypatch.setattr(p,'inspect_signature',forbidden);monkeypatch.setattr(p,'inspect_slots',forbidden)
     result=p.main(['--bundle',str(tmp_path),'--expected-manifest-sha256','0'*64,
-                   '--catalog',str(tmp_path/'missing.cat'),'--expected-catalog-sha256','a'*64])
+                   '--catalog',str(tmp_path/'missing.cat'),'--expected-catalog-sha256','a'*64],
+                  evidence=Strict())   # an invalid package is refused before any evidence is read
     value=json.loads(capsys.readouterr().out)
     assert result==1 and value['status']=='candidate_preflight_failed' and not value['client_admission']
 
@@ -54,8 +53,6 @@ def test_cli_has_no_install_or_elevation_option():
 def test_preflight_does_not_export_foreign_service_command_or_account(tmp_path,monkeypatch,capsys):
     digest=fixture(tmp_path,monkeypatch);cat=tmp_path/'release.cat';cat.write_bytes(b'inert catalog')
     cat_digest=hashlib.sha256(cat.read_bytes()).hexdigest()
-    monkeypatch.setattr(p,'inspect_release_catalog',lambda *args:dict(catalog_authenticode_verified=True))
-    monkeypatch.setattr(p,'inspect_signature',lambda *args:dict(authenticode_verified=True))
     inventory=dict(schema=2,root='C:\\SECRET-user\\ClaudeReset',root_occupied=True,
                    services=[dict(name='SbieSvc',exists=True,state=1,pid=0,start=3,type=16,
                                   binary='C:\\foreign.exe --token SECRET-token',account='SECRET-account',
@@ -63,9 +60,10 @@ def test_preflight_does_not_export_foreign_service_command_or_account(tmp_path,m
                    fresh_install_blockers=[dict(code='service_slot_occupied',service='SbieSvc')],
                    future_private_field='SECRET-future')
     before=json.dumps(inventory,sort_keys=True)
-    monkeypatch.setattr(p,'inspect_slots',lambda:inventory)
+    evidence=Strict(release_catalog=dict(catalog_authenticode_verified=True),
+                    signature=dict(authenticode_verified=True),slots=lambda:inventory)
     status=p.main(['--bundle',str(tmp_path),'--expected-manifest-sha256',digest,
-                  '--catalog',str(cat),'--expected-catalog-sha256',cat_digest])
+                  '--catalog',str(cat),'--expected-catalog-sha256',cat_digest],evidence=evidence)
     output=capsys.readouterr();assert status==2 and not output.err and 'SECRET' not in output.out
     report=json.loads(output.out)
     assert report['installation_inventory']['services']==[

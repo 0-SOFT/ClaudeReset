@@ -14,10 +14,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
-from claude_reset.install_payload import PinnedPayload
-from claude_reset.install_copy import _copy_pinned
-from claude_reset.install_signature import inspect_signature
-from claude_reset.windows_pin import PinnedFile
+from claude_reset.backend.payload import PinnedPayload
+from claude_reset.backend.payload_copy import copy_pinned
+from claude_reset.windows.authenticode import inspect_signature
+from claude_reset.windows.pin import PinnedFile
 from claude_reset.safeio import SafetyError, guarded, local_volume
 
 TOOL = 'Program Files/Windows Kits/10/bin/10.0.26100.0/x64/makecat.exe'
@@ -81,7 +81,7 @@ def main(bundle, expected, kit, output):
         # OS trust alone is not a publisher allowlist for release components.
         with PinnedPayload(bundle, expected) as payload:
             output.mkdir(exist_ok=False)
-            with _copy_pinned(payload.manifest, output/'release-manifest.json') as manifest:
+            with copy_pinned(payload.manifest, output/'release-manifest.json') as manifest:
                 (output/'release.cdf').write_bytes(CDF.encode('ascii'))
                 result = subprocess.run([str(tool.path), '-v', '-r', 'release.cdf'],
                     cwd=output, capture_output=True, timeout=120, creationflags=0x08000000)

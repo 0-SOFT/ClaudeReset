@@ -1,17 +1,31 @@
 """The main window on a real (hidden) Tk: navigation, the one-button reset and the proxy path.
 
 Every system call is replaced; questions are answered by the test."""
+import gc
 import time
 import tkinter as tk
 from pathlib import Path
 
 import pytest
+from claude_reset.model.confirmation import Confirmation
 
-from claude_reset import diagnostics, protection_panel, proxy_flow, reset_flow, shell
-from claude_reset.core import Paths
+from claude_reset.network import remote_backend
+from claude_reset.ui import protection_panel, reset_flow, shell
+from claude_reset.layout import Paths
+from proxy_fakes import Probe, working
+from scripted import Strict
 
 SUMMARY = {'state': 'paused', 'title': 'Защита на паузе', 'text': 'Claude сейчас выходит в интернет напрямую, без прокси.',
            'fix': 'resume', 'proxy': 'VLESS', 'proxy_saved': True, 'clients': [{'name': 'Claude Desktop', 'present': True}]}
+
+
+def program(summaries=(SUMMARY,), rows=()):
+    """The window's program with scripted reads; it has no network or L1: a check it was not given fails the test."""
+    value = shell.Program()
+    value.protection = lambda paths: summaries[-1]
+    value.history = lambda paths: {'rows': list(rows)}
+    value.probe, value.l1 = Probe(), Strict()
+    return value
 
 
 class Answers:
@@ -32,16 +46,16 @@ def ui(tmp_path, monkeypatch, tk_root):
                         ('LOCALAPPDATA', home / 'AppData/Local')):
         monkeypatch.setenv(name, str(value))
     summaries = [dict(SUMMARY)]
-    monkeypatch.setattr(proxy_flow, 'summary', lambda paths: summaries[-1])
-    monkeypatch.setattr(diagnostics, 'operation_history', lambda paths: {'rows': [{'status': 'fixed_locations_wiped'}]})
     top = tk.Toplevel(tk_root)
     top.withdraw()
-    window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', language='ru')
+    window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', language='ru',
+                         program=program(summaries, [{'status': 'fixed_locations_wiped'}]))
     window.ask = Answers()
     window.summaries = summaries
     pump(window)
     yield window
     top.destroy()
+    gc.collect()  # finalize Tk variables on the main thread, never in a later worker thread
 
 
 def pump(window, limit=20):
@@ -120,30 +134,30 @@ class FakeSession:
 
 
 def found(blockers=()):
-    return {'rows': [{'label': 'Claude Desktop: вход, история, настройки', 'size': '1,2 ГБ', 'status': 'present'}],
-            'total': '1,2 ГБ', 'credentials': 2, 'blockers': list(blockers), 'ready': not blockers, 'nothing_found': False}
+    return {'rows': [{'label': 'Desktop', 'bytes': 12 * 1024 ** 3 // 10, 'status': 'present'}],
+            'total_bytes': 12 * 1024 ** 3 // 10, 'credentials': 2, 'blockers': list(blockers), 'ready': not blockers, 'nothing_found': False}
 
 
-AUTO = {'key': 'processes', 'kind': 'auto', 'text': 'Claude Desktop или Claude Code открыты.'}
-VSCODE = {'key': 'vscode', 'kind': 'user', 'text': 'Открыт VS Code.'}
+AUTO = {'key': 'processes', 'kind': 'auto'}
+VSCODE = {'key': 'vscode', 'kind': 'user'}
 
 
-def test_reset_waits_for_the_site_step(ui, monkeypatch):
-    monkeypatch.setattr(reset_flow, 'ResetSession', lambda *a, **k: pytest.fail('started'))
+def test_reset_waits_for_the_site_step(ui):
+    ui.program.reset = lambda *a, **k: pytest.fail('started')
     ui.reset_start()
     assert ui.ask.asked[-1]['title'] == 'Сначала сайт Claude'
 
 
-def test_one_button_reset_resolves_confirms_and_wipes(ui, monkeypatch):
+def test_one_button_reset_resolves_confirms_and_wipes(ui):
     FakeSession.checks, FakeSession.instances = [found([AUTO]), found()], []
-    monkeypatch.setattr(reset_flow, 'ResetSession', FakeSession)
+    ui.program.reset = FakeSession
     ui.server_done.set(True)
     ui.ask.replies = [True]
     ui.reset_start()
     pump(ui)
     pump(ui)
     session = FakeSession.instances[-1]
-    assert session.calls == ['check', 'resolve', ('wipe', 'СТЕРЕТЬ', True)]
+    assert session.calls == ['check', 'resolve', ('wipe', Confirmation.ERASE, True)]
     confirm = ui.ask.asked[0]
     assert confirm['typed'] == 'СТЕРЕТЬ' and 'Claude Desktop: вход, история, настройки — 1,2 ГБ' in confirm['lines']
     shown = list(texts(ui.reset_result))
@@ -151,9 +165,9 @@ def test_one_button_reset_resolves_confirms_and_wipes(ui, monkeypatch):
     assert any('не сброшен' in t for t in shown) and 'Выйти из claude.ai в браузерах' in shown
 
 
-def test_reset_stops_and_explains_what_the_person_must_do(ui, monkeypatch):
+def test_reset_stops_and_explains_what_the_person_must_do(ui):
     FakeSession.checks, FakeSession.instances = [found([VSCODE])], []
-    monkeypatch.setattr(reset_flow, 'ResetSession', FakeSession)
+    ui.program.reset = FakeSession
     ui.server_done.set(True)
     ui.reset_start()
     pump(ui)
@@ -162,9 +176,9 @@ def test_reset_stops_and_explains_what_the_person_must_do(ui, monkeypatch):
     assert 'Нужно сделать вам' in shown and 'Проверить снова' in shown
 
 
-def test_cancelled_confirmation_deletes_nothing(ui, monkeypatch):
+def test_cancelled_confirmation_deletes_nothing(ui):
     FakeSession.checks, FakeSession.instances = [found()], []
-    monkeypatch.setattr(reset_flow, 'ResetSession', FakeSession)
+    ui.program.reset = FakeSession
     ui.server_done.set(True)
     ui.ask.replies = [None]
     ui.reset_start()
@@ -180,20 +194,15 @@ def test_wrong_proxy_fields_are_explained_inline(ui):
     assert 'IPv4' in ui.proxy_error.cget('text')
 
 
-def test_proxy_check_confirm_and_switch_on(ui, monkeypatch):
-    from claude_reset import proxy_form
+def test_proxy_check_confirm_and_switch_on(ui):
     ui.summaries.append(dict(SUMMARY, state='off', fix=None, title='Защита выключена'))
     ui.show('proxy')
     pump(ui)
     assert ui.proxy_button.cget('text') == 'Проверить и включить защиту'
 
-    def check(self):
-        self.expected = {'expected_exit_ips': ['9.9.9.9']}
-        return {'status': 'proxy_checked'}
-    monkeypatch.setattr(proxy_form.ProxyDraft, 'check', check)
-    monkeypatch.setattr(protection_panel, 'limits', lambda paths: {'known': True, 'lines': ['Граница']})
-    calls = []
-    monkeypatch.setattr(proxy_flow, 'connect', lambda paths, checked, **kw: calls.append(kw) or {'text': 'Защита включена', 'ok': True})
+    ui.program.probe = working('9.9.9.9')
+    boundary = next(iter(protection_panel.LIMITS))
+    ui.program.l1 = Strict(boundaries=[boundary], install={'status': 'installed'})
     for key, value in (('host', '9.9.9.9'), ('port', '1080'), ('username', 'u'), ('password', 'secret-pass')):
         ui.fields[key].set(value)
     ui.protect_extension.set(True)
@@ -203,8 +212,10 @@ def test_proxy_check_confirm_and_switch_on(ui, monkeypatch):
         pump(ui)
     titles = [a['title'] for a in ui.ask.asked]
     assert titles[:2] == ['Прокси работает ✓', 'Перед включением'] and ui.ask.asked[0]['lines'] == ['9.9.9.9']
-    assert ui.ask.asked[1]['lines'] == ['Граница']
-    assert calls == [{'installed': False, 'protect_extension': True}]
+    assert ui.ask.asked[1]['lines'] == [protection_panel.LIMITS[boundary]]
+    assert [(name, kw['protect_extension']) for name, _, kw in ui.program.l1.calls if name != 'boundaries'] == [
+        ('install', True)]
+    assert remote_backend.load(ui.paths)['password'] == 'secret-pass'   # the checked proxy was saved before the install
     assert all('secret-pass' not in str(a) for a in ui.ask.asked) and 'secret-pass' not in ui.status.get()
 
 
@@ -231,17 +242,17 @@ def test_typed_dialog_unlocks_only_on_the_exact_word(ui):
 
 
 def test_theme_switch_rebuilds_in_place_and_is_remembered(ui):
-    from claude_reset import brand, ui_settings
+    from claude_reset.ui import brand, settings as ui_settings
     ui.show('reset')
     ui.set_theme('dark')
-    assert ui.theme.mode == 'dark' and shell.C['paper'] == brand.DARK['paper']
+    assert ui.theme.mode == 'dark' and ui.theme.colors['paper'] == brand.DARK['paper']
     assert ui.current == 'reset' and str(ui.nav['reset'].cget('style')) == 'NavOn.TButton'
     assert ui_settings.theme(ui.paths) == 'dark'
     for mode in ('dark', 'light'):
         ui.set_theme(mode)
         # Text on turquoise stays ink in both themes.
         assert ui.theme.style.lookup('Accent.h3.TLabel', 'foreground') == '#0e0e0e'
-    assert ui.theme.mode == 'light' and shell.C['paper'] == brand.LIGHT['paper']
+    assert ui.theme.mode == 'light' and ui.theme.colors['paper'] == brand.LIGHT['paper']
 
 
 def test_keyboard_reaches_every_step(ui):
@@ -269,13 +280,11 @@ def test_keyboard_reaches_every_step(ui):
         ui.root.withdraw()
 
 
-def test_window_fits_a_small_screen(tk_root, tmp_path, monkeypatch):
-    monkeypatch.setattr(proxy_flow, 'summary', lambda paths: SUMMARY)
-    monkeypatch.setattr(diagnostics, 'operation_history', lambda paths: {'rows': []})
+def test_window_fits_a_small_screen(tk_root, tmp_path):
     top = tk.Toplevel(tk_root)
     top.withdraw()
     top.winfo_screenwidth, top.winfo_screenheight = (lambda: 1000), (lambda: 700)
-    window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', language='ru')
+    window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', language='ru', program=program())
     pump(window)
     size = top.geometry().split('+')[0].split('x')
     assert int(size[0]) <= 920 and int(size[1]) <= 616
@@ -314,10 +323,10 @@ def test_closing_during_a_read_only_check_does_not_ask(ui, monkeypatch):
     pump(ui)
 
 
-def test_reset_continues_by_itself_once_the_person_closes_vs_code(ui, monkeypatch):
+def test_reset_continues_by_itself_once_the_person_closes_vs_code(ui):
     # two checks while VS Code is open, one that sees it closed, and the fresh check before the wipe
     FakeSession.checks, FakeSession.instances = [found([VSCODE]), found([VSCODE]), found(), found()], []
-    monkeypatch.setattr(reset_flow, 'ResetSession', FakeSession)
+    ui.program.reset = FakeSession
     ui.WATCH_MS = 20
     ui.server_done.set(True)
     ui.ask.replies = [True]
@@ -329,13 +338,13 @@ def test_reset_continues_by_itself_once_the_person_closes_vs_code(ui, monkeypatc
         ui.root.update()
         time.sleep(.01)
     pump(ui)
-    assert FakeSession.instances[-1].calls == ['check', 'check', 'check', 'check', ('wipe', 'СТЕРЕТЬ', True)]
+    assert FakeSession.instances[-1].calls == ['check', 'check', 'check', 'check', ('wipe', Confirmation.ERASE, True)]
     assert ui.ask.asked[0]['typed'] == 'СТЕРЕТЬ'
 
 
-def test_leaving_the_page_stops_waiting(ui, monkeypatch):
+def test_leaving_the_page_stops_waiting(ui):
     FakeSession.checks, FakeSession.instances = [found([VSCODE])] * 3, []
-    monkeypatch.setattr(reset_flow, 'ResetSession', FakeSession)
+    ui.program.reset = FakeSession
     ui.WATCH_MS = 400
     ui.server_done.set(True)
     ui.show('reset')
@@ -350,16 +359,13 @@ def test_leaving_the_page_stops_waiting(ui, monkeypatch):
     assert FakeSession.instances[-1].calls == ['check']
 
 
-def test_english_window_has_no_russian_anywhere(tk_root, tmp_path, monkeypatch):
+def test_english_window_has_no_russian_anywhere(tk_root, tmp_path):
     import re
-    from claude_reset import ui_text
     cyrillic = re.compile('[А-Яа-яЁё]')
-    monkeypatch.setattr(proxy_flow, 'summary', lambda paths: SUMMARY)
-    monkeypatch.setattr(diagnostics, 'operation_history', lambda paths: {'rows': []})
     top = tk.Toplevel(tk_root)
     top.withdraw()
     try:
-        window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', language='en')
+        window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', language='en', program=program())
         window.ask = Answers()
         pump(window)
 
@@ -383,8 +389,8 @@ def test_english_window_has_no_russian_anywhere(tk_root, tmp_path, monkeypatch):
         window.session = type('S', (), {'keep_memory': True, 'accept_unlisted': False})()
         window.reset_checked({'rows': [{'label': 'Claude Code: история, проекты, память', 'size': '40,3 МБ', 'status': 'present'}],
                               'total': '40,3 МБ', 'credentials': 2, 'nothing_found': False, 'ready': False,
-                              'blockers': [{'key': 'vscode', 'kind': 'user', 'text': reset_flow.BLOCKERS['vscode'][1]},
-                                           {'key': 'processes', 'kind': 'auto', 'text': reset_flow.BLOCKERS['processes'][1]}]}, False)
+                              'blockers': [{'key': 'vscode', 'kind': 'user', 'text': reset_flow.BLOCKERS['vscode']},
+                                           {'key': 'processes', 'kind': 'auto', 'text': reset_flow.BLOCKERS['processes']}]}, False)
         window.stop_watch()
         assert russian() == [] and '40.3 MB' in list(texts(window.reset_result))
         window.reset_done({'stage': 'wiped', 'result': {'status': 'done', 'memory': 'restored_verbatim', 'desktop_keys': 'not_supported',
@@ -392,30 +398,41 @@ def test_english_window_has_no_russian_anywhere(tk_root, tmp_path, monkeypatch):
         assert russian() == []
         assert window.ask.asked == []
     finally:
-        ui_text.set_language('ru')
         top.destroy()
 
 
-def test_russian_by_default_and_english_one_click_away(tk_root, tmp_path, monkeypatch):
-    from claude_reset import ui_settings, ui_text
-    monkeypatch.setattr(proxy_flow, 'summary', lambda paths: SUMMARY)
-    monkeypatch.setattr(diagnostics, 'operation_history', lambda paths: {'rows': []})
+def test_russian_by_default_and_english_one_click_away(tk_root, tmp_path):
+    from claude_reset.ui import settings as ui_settings
     top = tk.Toplevel(tk_root)
     top.withdraw()
     try:
-        window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light')
+        window = shell.Shell(Paths.current(tmp_path / 'state'), top, theme='light', program=program())
         pump(window)
-        assert ui_text.language() == 'ru' and str(window.language_button.cget('text')) == 'ENGLISH'
+        assert window.language.code == 'ru' and str(window.language_button.cget('text')) == 'ENGLISH'
         window.show('reset')
         pump(window)
         window.language_button.invoke()
         pump(window)
-        assert ui_text.language() == 'en' and window.current == 'reset'
+        assert window.language.code == 'en' and window.current == 'reset'
         assert str(window.language_button.cget('text')) == 'РУССКИЙ' and 'Reset Claude' in list(texts(window.pages['reset'].inner))
         assert ui_settings.language(window.paths) == 'en'
         window.language_button.invoke()
         pump(window)
-        assert ui_text.language() == 'ru' and ui_settings.language(window.paths) == 'ru'
+        assert window.language.code == 'ru' and ui_settings.language(window.paths) == 'ru'
     finally:
-        ui_text.set_language('ru')
         top.destroy()
+
+
+def test_english_dialogs_have_english_default_buttons(ui):
+    # The default buttons were once worded when the module loaded, so an English window showed Russian ones.
+    ui.set_language_choice('en')
+    pump(ui)
+    dialog = shell.Dialog(ui, 'Title', 'Text')
+    try:
+        assert 'OK' in list(texts(dialog))
+    finally:
+        dialog.destroy()
+    asked = []
+    ui.ask = lambda title, text, buttons=(), lines=(), typed=None: asked.append(buttons)
+    ui.confirm('Title', 'Text', 'Yes')
+    assert [label for _, label, _ in asked[0]] == ['Yes', 'Cancel']

@@ -2,32 +2,37 @@ import json
 import types
 import pytest
 
-from claude_reset import l1_install as inst
+from claude_reset.network import l1_install as inst
+from claude_reset.network import controller_status
+from claude_reset.network import l1_common
+from claude_reset.elevation import claims
+from claude_reset.windows import tasks
+from claude_reset.model.status import NextAction
 
 
 @pytest.fixture(autouse=True)
 def scheduler_identity(monkeypatch, tmp_path):
-    from claude_reset import controller_admission, uac_request as uac
+    from claude_reset.elevation import request as uac
     paths = types.SimpleNamespace(state=tmp_path, local=tmp_path / 'local')
     claim = {'schema': 2, 'operation': 'test', 'owner_id': 'a' * 32,
              'state_root': str(tmp_path)}
-    owner = uac.Owner(claim, uac.pending_path(paths))
+    owner = claims.Owner(claim, claims.pending_path(paths))
     token = None
     def schedule(folder):
         nonlocal token
-        uac._save_exclusive(owner.pending, claim)
-        uac._save_exclusive(uac._inventory_path(claim),
+        claims.save_exclusive(owner.pending, claim)
+        claims.save_exclusive(claims.inventory_path(claim),
                             {'schema': 1, 'claim': claim, 'requests': []})
-        token = uac._chain.set(owner)
+        token = claims.chain.set(owner)
         request = uac.prepare(paths, 'start', scheduler=True)
         owner.start_request = request
         return request
-    monkeypatch.setattr(controller_admission, 'schedule', schedule)
+    monkeypatch.setattr(uac, 'schedule', schedule)
     try:
         yield
     finally:
         if token is not None:
-            uac._chain.reset(token)
+            claims.chain.reset(token)
 
 
 def clock_and_sleep():
@@ -36,7 +41,7 @@ def clock_and_sleep():
 
 
 def status(folder, **values):
-    from claude_reset.uac_request import _chain
+    from claude_reset.elevation.claims import chain as _chain
     owner = _chain.get()
     request = owner.start_request if owner else None
     values.setdefault('request_id', request.request_id if request else 'fixture-request')
@@ -90,9 +95,8 @@ def test_a_refused_request_is_retried_too(tmp_path):
     assert inst.start_controller(tmp_path, None, run=run, sleep=sleep, clock=clock) is True and len(calls) == 2
 
 
-def test_wait_for_relay_ignores_the_stopped_controllers_status(tmp_path, monkeypatch):
+def test_wait_for_relay_ignores_the_stopped_controllers_status(tmp_path):
     """Regression: the stale 'blocked_controller_stopped' of the replaced controller ended the wait after 14 s."""
-    from claude_reset import l1_mechanism
     clock, sleep, now = clock_and_sleep()
     status(tmp_path, instance='old', state='blocked_controller_stopped', stop_reason='close_requested')
 
@@ -100,13 +104,12 @@ def test_wait_for_relay_ignores_the_stopped_controllers_status(tmp_path, monkeyp
         sleep(seconds)
         if now['t'] > 20:
             status(tmp_path, instance='new', state='relay_open', level='L1_owner_accepted_limits')
-    monkeypatch.setattr(l1_mechanism, 'connect', lambda host, port, timeout=2.0: 'connected')
-    up, state = inst.wait_for_relay(tmp_path, 'old', sleep=tick, clock=clock)
+    up, state = inst.wait_for_relay(tmp_path, 'old', sleep=tick, clock=clock,
+                                    connect=lambda host, port, timeout=2.0: 'connected')
     assert up is True and state['instance'] == 'new'
 
 
-def test_a_real_failure_of_the_new_controller_is_still_reported(tmp_path, monkeypatch):
-    from claude_reset import l1_mechanism
+def test_a_real_failure_of_the_new_controller_is_still_reported(tmp_path):
     clock, sleep, now = clock_and_sleep()
     status(tmp_path, instance='old', state='blocked_controller_stopped')
 
@@ -114,16 +117,16 @@ def test_a_real_failure_of_the_new_controller_is_still_reported(tmp_path, monkey
         sleep(seconds)
         if now['t'] > 6:
             status(tmp_path, instance='new', state='blocked_error', error_reason='x')
-    monkeypatch.setattr(l1_mechanism, 'connect', lambda host, port, timeout=2.0: 'refused')
-    up, state = inst.wait_for_relay(tmp_path, 'old', sleep=tick, clock=clock)
+    up, state = inst.wait_for_relay(tmp_path, 'old', sleep=tick, clock=clock,
+                                    connect=lambda host, port, timeout=2.0: 'refused')
     assert up is False and state['instance'] == 'new' and state['state'] == 'blocked_error'
 
 
 def test_wait_task_idle_waits_for_the_process_tree_to_finish():
     clock, sleep, now = clock_and_sleep()
     states = iter(['Running', 'Running', 'Running', 'Ready'])
-    assert inst.wait_task_idle(30, state=lambda: next(states), sleep=sleep, clock=clock) is True
-    assert inst.wait_task_idle(5, state=lambda: 'Running', sleep=sleep, clock=clock) is False
+    assert l1_common.wait_task_idle(30, state=lambda: next(states), sleep=sleep, clock=clock) is True
+    assert l1_common.wait_task_idle(5, state=lambda: 'Running', sleep=sleep, clock=clock) is False
 
 
 class RestartDeps:
@@ -171,7 +174,7 @@ def test_restart_with_closed_port_still_checks_controller_stop(tmp_path):
 
 def test_restart_reports_a_failed_start_with_the_manual_command(tmp_path):
     report = restart(tmp_path, RestartDeps(start=False))
-    assert report['status'] == 'start_failed' and report['clients_without_network'] is True and 'schtasks /Run' in report['next']
+    assert report['status'] == 'start_failed' and report['clients_without_network'] is True and report['next'] == NextAction.START_CONTROLLER_THEN_CHECK
 
 
 def test_restart_that_never_opens_the_relay_says_so(tmp_path):
@@ -186,23 +189,23 @@ def test_restart_refuses_when_nothing_is_installed_and_when_the_controller_will_
 
 
 def test_current_instance_handles_a_missing_or_broken_status_file(tmp_path):
-    assert inst.current_instance(tmp_path) is None
+    assert controller_status.current_instance(tmp_path) is None
     (tmp_path / 'status.json').write_text('not json')
-    assert inst.current_instance(tmp_path) is None
+    assert controller_status.current_instance(tmp_path) is None
     status(tmp_path, instance='abc')
-    assert inst.current_instance(tmp_path) == 'abc'
+    assert controller_status.current_instance(tmp_path) == 'abc'
 
 
 def test_unknown_task_states_never_prove_idle():
     for value in (None, '', 'Unknown', 'Queued', 'Running', 'Ready\nRunning'):
         clock, sleep, _ = clock_and_sleep()
-        assert not inst.wait_task_idle(3, state=lambda: value, sleep=sleep, clock=clock)
+        assert not l1_common.wait_task_idle(3, state=lambda: value, sleep=sleep, clock=clock)
 
 
 def test_failed_task_query_cannot_report_missing(monkeypatch):
-    from claude_reset import backend_install
-    monkeypatch.setattr(backend_install, 'powershell', lambda script: (1, 'Missing', 'error'))
-    assert inst.task_state() is None
+    from claude_reset.backend import install as backend_install
+    monkeypatch.setattr(tasks, 'run', lambda script, runner=None: (1, 'Missing', 'error'))
+    assert l1_common.task_state() is None
 
 
 def test_restart_closed_port_busy_controller_retains_claim(tmp_path):

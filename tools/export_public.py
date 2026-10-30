@@ -14,7 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INCLUDE = ['LICENSE', 'ClaudeReset.cmd', 'requirements-runtime.txt', 'requirements-lock.txt', 'requirements-dev.txt',
-           'src/launcher.py', 'src/launcher_run.py', 'src/pyproject.toml', 'src/claude_reset', 'src/tests', 'src/native',
+           'src/launcher.py', 'src/launcher_run.py', 'src/backend_runtime_main.py', 'src/installer_preflight_main.py',
+           'src/pyproject.toml', 'src/claude_reset', 'src/tests', 'src/native',
            'packaging/identity', 'packaging/backend', 'packaging/bundle', 'third_party', 'examples',
            'tools',
            'docs/USER-GUIDE.md', 'docs/GUIDE-FRESH-START.md', 'docs/GUI-ACCEPTANCE.md', 'docs/LICENSE-REVIEW-G6.md',
@@ -33,7 +34,9 @@ FORBIDDEN = {
     'token': re.compile(r'\bgh[pousr]_[A-Za-z0-9]{36,}|\bsk-(?:ant-)?[A-Za-z0-9_\-]{24,}|\bAKIA[0-9A-Z]{16}\b'),
     'vless link': re.compile(r'vless://[0-9a-fA-F-]{36}@'),
     'personal e-mail': re.compile(r'[A-Za-z0-9._%+-]+@(?:hotmail|gmail|outlook|yandex|mail|icloud)\.[a-z]{2,}', re.I),
-    'user folder': re.compile(r'(?i)[A-Z]:[\\/]+Users[\\/]+(?!<|\{|%|Public|Default|Private|someone|alice|bob|user[\\/])[A-Za-z0-9._-]+'),
+    # The tests' placeholder profiles (someone, person, alice, bob, user) are not personal.
+    'user folder': re.compile(r'(?i)[A-Z]:[\\/]+Users[\\/]+'
+                              r'(?!<|\{|%|Public|Default|Private|someone|person[\\/]|alice|bob|user[\\/])[A-Za-z0-9._-]+'),
 }
 
 

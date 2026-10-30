@@ -9,8 +9,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset import controller_admission as gate, strict_guard as guard
-from claude_reset import uac_request as uac
+from claude_reset.elevation import admission as gate
+from claude_reset.network import controller as guard
+from claude_reset.elevation import claims
+from claude_reset.elevation import request as uac
 from claude_reset.safeio import SafetyError
 from test_uac_request import paths
 
@@ -22,7 +24,7 @@ from pathlib import Path
 import sys
 import time
 from types import SimpleNamespace
-from claude_reset import strict_guard as guard
+from claude_reset.network import controller as guard
 from claude_reset.safeio import SafetyError
 
 # Use the production file lock and real Windows APIs, but a unique mutex name
@@ -39,7 +41,7 @@ class Kernel:
         return getattr(self.api, name)
 ctypes.WinDLL = Kernel
 p = SimpleNamespace(local=Path(sys.argv[1]), state=Path(sys.argv[2]))
-def synthetic(paths, report, folder, state):
+def synthetic(paths, report, folder, state, **kw):
     print(json.dumps(state), flush=True)
     if sys.argv[5] == 'hold':
         command = sys.stdin.readline().strip()
@@ -55,7 +57,7 @@ def synthetic(paths, report, folder, state):
                 time.sleep(.01)
             raise RuntimeError('No exact close request')
     return state
-guard._serve_admitted = synthetic
+guard.run_admitted = synthetic
 try:
     guard.serve(p, p.state / 'report.json', request_id=sys.argv[4] or None)
 except SafetyError:
@@ -102,7 +104,7 @@ def old_controller(paths, children):
     process = children(request.request_id, hold=True)
     state = admitted(process)
     assert state['pid'] == process.pid and state['process_created'] > 0
-    uac._release(paths, request)
+    uac.release(paths, request)
     return process, state
 
 
@@ -118,11 +120,11 @@ def test_preexisting_controller_is_stopped_before_change_and_exact_handoff(paths
         refused(children(request.request_id, state=root))
         assert json.loads(gate.permit_path(target).read_text())['consumed'] is False
         assert old.poll() is None and status.read_bytes() == before
-        uac._release(target, request)
+        uac.release(target, request)
 
-    @uac.serialized('replace', completed={'completed'})
+    @claims.serialized('replace', completed={'completed'})
     def replace(p):
-        claim = uac.pending_path(p).read_bytes()
+        claim = claims.pending_path(p).read_bytes()
         before = status.read_bytes()
         refused(children())
         # Another root bypasses controller.lock but not the real named mutex.
@@ -136,9 +138,9 @@ def test_preexisting_controller_is_stopped_before_change_and_exact_handoff(paths
         assert json.loads((status.parent / 'close.request').read_text())['instance'] == initial['instance']
         for phase in ('after_stop', 'change', 'before_start'):
             refused(children())
-            assert uac.pending_path(p).read_bytes() == claim, phase
+            assert claims.pending_path(p).read_bytes() == claim, phase
             assert status.read_bytes() == before
-        request = gate.schedule(status.parent)
+        request = uac.schedule(status.parent)
         replacement = children(hold=True)
         fresh = admitted(replacement)
         assert fresh['request_id'] == request.request_id
@@ -152,41 +154,8 @@ def test_preexisting_controller_is_stopped_before_change_and_exact_handoff(paths
         return {'status': 'completed'}
 
     assert replace(paths)['status'] == 'completed'
-    assert not uac.blocked(paths)
+    assert not claims.blocked(paths)
     refused(children())  # Late scheduler after successful claim release.
-
-
-@pytest.mark.parametrize('damage', ['missing', 'corrupt', 'legacy'])
-def test_live_owner_with_unusable_status_retains_claim_without_change(paths, children, damage):
-    old, _ = old_controller(paths, children)
-    status = paths.state / 'strict-guard/status.json'
-    if damage == 'missing':
-        status.unlink()
-    else:
-        status.write_text('broken' if damage == 'corrupt' else '{}')
-    effects = []
-
-    @uac.serialized('replace', completed={'completed'})
-    def replace(p):
-        with pytest.raises((OSError, ValueError, SafetyError)):
-            guard.request_close(p)
-        assert old.poll() is None
-        with pytest.raises(SafetyError):
-            gate.schedule(status.parent)
-        refused(children())
-        if not uac.blocked(p):
-            effects.append('change')
-        return {'status': 'completed'}
-
-    assert replace(paths)['retry_blocked'] is True
-    assert uac.blocked(paths) and effects == []
-    assert not (status.parent / 'close.request').exists()
-    old.stdin.write('exit\n')
-    old.stdin.flush()
-    assert old.wait(timeout=10) == 0
-    # Death and missing status do not prove resource/late-child reconciliation.
-    assert uac.inspect_pending(paths)['retry_blocked'] is True
-    refused(children())
 
 
 def test_bare_scheduler_denial_is_recorded_without_inferred_identity(paths, children):

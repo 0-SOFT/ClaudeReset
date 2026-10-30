@@ -1,14 +1,16 @@
 """Real (hidden) Tk window on an isolated profile: every plan-table capability has a wired button,
 and the read-only buttons run to completion without an error dialog."""
+import gc
 import os
 import time
 import tkinter as tk
-from tkinter import messagebox
 
 import pytest
 
-from claude_reset import app, planner, windows
-from claude_reset.core import Paths
+from claude_reset.ui import expert_window as app
+from claude_reset.windows import system as windows
+from claude_reset.layout import Paths
+from dialog_fakes import Dialogs
 
 # Plan v4 section 2: capability -> visible button text (substring).
 CAPABILITIES = {
@@ -67,15 +69,18 @@ def window(tmp_path, monkeypatch, host_state, tk_root):
     monkeypatch.setenv('APPDATA', str(home / 'AppData/Roaming'))
     monkeypatch.setenv('LOCALAPPDATA', str(home / 'AppData/Local'))
     monkeypatch.setenv('PROGRAMDATA', str(tmp_path / 'pd'))
-    monkeypatch.setattr(planner, 'inspect_windows', lambda: host_state)
     shown = []
-    for name in ('showinfo', 'showwarning', 'showerror', 'askyesno', 'askokcancel'):
-        monkeypatch.setattr(messagebox, name, lambda *a, _n=name, **k: shown.append((_n, a)) or False)
+    dialogs = Dialogs(**{name: (lambda *a, _n=name, **k: shown.append((_n, a)) or False)
+                         for name in ('showinfo', 'showwarning', 'showerror', 'askyesno')})
     root = tk.Toplevel(tk_root)
     root.withdraw()
-    ui = app.App(root=root, paths=Paths.current(tmp_path / 'state'))
+    ui = app.App(root=root, paths=Paths.current(tmp_path / 'state'), dialogs=dialogs)
+    ui.inspect = lambda: host_state
     yield ui, root, shown
     root.destroy()
+    # Tk variables of this window must be finalized here, on the main thread: a collection that happens
+    # to run in the next test's worker thread would block in Variable.__del__ waiting for Tcl.
+    gc.collect()
 
 
 def buttons(widget):

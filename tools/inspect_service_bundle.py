@@ -6,10 +6,9 @@ import sys
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
-from claude_reset.install_payload import PinnedPayload
-from claude_reset.install_signature import inspect_signature
-from claude_reset.install_catalog import inspect_release_catalog
-from claude_reset.windows_pin import PinnedFile
+from claude_reset.backend.payload import PinnedPayload, inspect_release_catalog
+from claude_reset.windows.authenticode import inspect_signature
+from claude_reset.windows.pin import PinnedFile
 from claude_reset.safeio import SafetyError
 
 

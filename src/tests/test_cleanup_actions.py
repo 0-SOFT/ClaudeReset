@@ -1,7 +1,9 @@
 import json
 import pytest
-from claude_reset import cleanup_actions as ca
+from claude_reset.windows import cleanup_actions as ca
 from claude_reset.safeio import SafetyError
+from functools import partial
+from claude_reset.model import clients
 
 
 def test_credential_scope_matches_ps1_without_passwords(monkeypatch):
@@ -18,7 +20,7 @@ def test_credential_scope_matches_ps1_without_passwords(monkeypatch):
     assert len(scripts) == 1
 
 
-@pytest.mark.parametrize('action,status', [(ca.resolve_processes, 'process_stop_requested'),
+@pytest.mark.parametrize('action,status', [(partial(ca.resolve_processes, clients.CLOSABLE_APPS), 'process_stop_requested'),
                                           (ca.resolve_service, 'cowork_service_stopped')])
 def test_resolve_success_and_refusal(action, status):
     scripts = []
@@ -27,7 +29,7 @@ def test_resolve_success_and_refusal(action, status):
         return {'status': status}
     assert action(run=run) == {'status': status}
     assert 'RunAs' not in scripts[0] and 'Code.exe' not in scripts[0]
-    if action == ca.resolve_processes:
+    if action is not ca.resolve_service:
         assert 'CreationDate' in scripts[0] and 'ParentProcessId' in scripts[0]
     else:
         assert "Stop-Service -Name CoworkVMService" in scripts[0]

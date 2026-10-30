@@ -1,7 +1,7 @@
 import os
 import socket
 import pytest
-from claude_reset.tcp_inventory import listeners
+from claude_reset.windows.tcp import listeners
 from claude_reset.safeio import SafetyError
 
 

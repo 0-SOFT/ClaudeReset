@@ -1,7 +1,7 @@
 import subprocess
 import time
 
-from claude_reset import strict_guard as guard
+from claude_reset.network import autostart as guard
 
 
 def running_copy(tmp_path, name='app.exe'):

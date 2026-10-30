@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset import ui_settings
+from claude_reset.ui import settings as ui_settings
 
 
 def test_theme_round_trip_and_defaults(tmp_path):

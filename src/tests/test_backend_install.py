@@ -8,8 +8,10 @@ import zipfile
 
 import pytest
 
-from claude_reset import backend_install as bi
-from claude_reset import netguard
+from claude_reset.backend import install as bi
+from claude_reset.elevation import claims
+from claude_reset.network import legacy_guard as netguard
+from claude_reset.backend import location as backend_location
 from claude_reset.safeio import SafetyError
 
 KEY = base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip('=')
@@ -60,12 +62,12 @@ def setup(tmp_path, monkeypatch):
 
 
 def guard_of(base):
-    return netguard.Guard(base, base / 'pythonw.exe', {'state': 'Ready', 'enabled': True, 'run_level': 'Limited'})
+    return backend_location.Guard(base, base / 'pythonw.exe', {'state': 'Ready', 'enabled': True, 'run_level': 'Limited'})
 
 
 def test_runtime_config_has_exactly_the_shape_the_controller_checks():
     runtime = bi.build_runtime_config(tunnel_config(), secret='s' * 32)
-    result = netguard.check_proxy_config(runtime)
+    result = backend_location.check_proxy_config(runtime)
     assert result['passed'] and [o['tag'] for o in runtime['outbounds']] == ['snow-only']
     assert runtime['outbounds'][0]['server'] == EXIT_SERVER and runtime['route'] == {'final': 'snow-only'}
 
@@ -117,7 +119,7 @@ def test_prepared_files_pass_the_controllers_own_static_check(setup):
     base, worker = bi.prepare(setup.paths, setup.file, opener=opener_for(setup.data))
     meta = json.loads((base / 'profile.json').read_text())
     assert meta['plaintext_config_written'] is False and meta['proxy_url'] == 'http://127.0.0.1:25080'
-    assert netguard.check_engine_and_config(guard_of(base))['passed'] is True
+    assert backend_location.check_engine_and_config(guard_of(base))['passed'] is True
     text = worker.read_text('utf-8')
     assert bi.PLACEHOLDER not in text and str(bi.ROOT / 'src') in text
     compile(text, 'proxy_worker.py', 'exec')
@@ -154,10 +156,9 @@ class Windows:
 def run_install(setup, windows, monkeypatch, *, worker_state='running', measured=None, busy=()):
     pythonw = setup.tmp / 'pythonw.exe'
     pythonw.write_bytes(b'x')
-    monkeypatch.setattr(netguard, 'locate_guard', lambda: guard_of(bi.base_directory(setup.paths)))
-    from claude_reset import l1_mechanism
-    monkeypatch.setattr(l1_mechanism, 'connect', lambda host, port, timeout=2.0: 'connected' if port in busy else 'refused')
+    monkeypatch.setattr(backend_location, 'locate_guard', lambda: guard_of(bi.base_directory(setup.paths)))
     return bi.install(setup.paths, setup.file, runner=windows, opener=opener_for(setup.data), pythonw=pythonw,
+                      port_busy=lambda port: port in busy,
                       measure=lambda proxy: measured or {'status': 'measured', 'exit_ip': '203.0.113.9', 'address_family': 4},
                       wait=lambda base: {'state': worker_state, 'error_type': 'RuntimeError'})
 
@@ -230,17 +231,17 @@ def test_remove_leaves_foreign_files_alone(setup, monkeypatch):
 
 
 def test_backend_nested_install_and_remove_hold_outer_claim(setup, monkeypatch):
-    from claude_reset import uac_request as uac
+    from claude_reset.elevation import request as uac
     windows = Windows()
 
-    @uac.serialized('test-l1-chain', completed={'done'})
+    @claims.serialized('test-l1-chain', completed={'done'})
     def chain(paths):
-        claim = uac.pending_path(paths).read_bytes()
+        claim = claims.pending_path(paths).read_bytes()
         assert run_install(setup, windows, monkeypatch)['status'] == 'installed'
-        assert uac.pending_path(paths).read_bytes() == claim
+        assert claims.pending_path(paths).read_bytes() == claim
         assert bi.remove(paths, runner=windows, port_busy=lambda port: False)['status'] == 'removed'
-        assert uac.pending_path(paths).read_bytes() == claim
+        assert claims.pending_path(paths).read_bytes() == claim
         return {'status': 'done'}
 
     assert chain(setup.paths)['status'] == 'done'
-    assert not uac.blocked(setup.paths)
+    assert not claims.blocked(setup.paths)

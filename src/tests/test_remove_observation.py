@@ -5,7 +5,12 @@ import winreg
 
 import pytest
 
-from claude_reset import strict_guard as guard, uac_request as uac
+from claude_reset.network import controller as guard
+from claude_reset.elevation import request as uac
+from claude_reset.elevation import claims
+from claude_reset import config
+from claude_reset.network.strict_wfp import Engine as StrictEngine
+from wfp_fakes import fake
 
 
 @pytest.mark.parametrize('fault', [None, 'sublayer', 'filters', 'wfp-read',
@@ -13,8 +18,7 @@ from claude_reset import strict_guard as guard, uac_request as uac
 def test_remove_requires_observed_resource_absence(tmp_path, monkeypatch, fault):
     calls = []
 
-    class Engine:
-        handle = 1
+    class Engine(fake(StrictEngine)):
         committed = False
 
         def __enter__(self):
@@ -32,13 +36,13 @@ def test_remove_requires_observed_resource_absence(tmp_path, monkeypatch, fault)
             return {'00000000-0000-0000-0000-000000000001'} if (
                 not self.committed or fault == 'filters') else set()
 
-        def _call(self, name, *args):
+        def native(self, name, *args, **kwargs):
             calls.append(name)
             if name == 'FwpmTransactionCommit0':
                 self.committed = True
 
-    values = {winreg.HKEY_CURRENT_USER: (guard.GATE_URL, winreg.REG_SZ),
-              winreg.HKEY_LOCAL_MACHINE: (guard.GATE_URL, winreg.REG_SZ)}
+    values = {winreg.HKEY_CURRENT_USER: (config.RELAY_URL, winreg.REG_SZ),
+              winreg.HKEY_LOCAL_MACHINE: (config.RELAY_URL, winreg.REG_SZ)}
     if fault == 'foreign':
         values[winreg.HKEY_CURRENT_USER] = ('foreign-proxy', winreg.REG_SZ)
     reads = {}
@@ -69,18 +73,17 @@ def test_remove_requires_observed_resource_absence(tmp_path, monkeypatch, fault)
         if key.hive != retained:
             del values[key.hive]
 
-    monkeypatch.setattr(guard, 'Engine', Engine)
     monkeypatch.setattr(winreg, 'OpenKey', lambda hive, *args: Key(hive))
     monkeypatch.setattr(winreg, 'QueryValueEx', query)
     monkeypatch.setattr(winreg, 'DeleteValue', delete)
     paths = SimpleNamespace(state=tmp_path / 'state', local=tmp_path / 'local')
     request = uac.prepare(paths, 'remove')
-    result = guard.remove(paths, Path(request.receipt), request_id=request.request_id)
+    result = guard.remove(paths, Path(request.receipt), request_id=request.request_id, engine=Engine)
     assert uac.read_receipt(request) == result
     successful = fault in (None, 'foreign')
     assert (result.get('removed') is True) == successful
     assert uac.verdict(request, result) == ('completed' if successful else 'reconcile_required')
-    assert uac.blocked(paths)  # A resource snapshot does not release ownership.
+    assert claims.blocked(paths)  # A resource snapshot does not release ownership.
     if successful:
         assert result['sublayer_present_after'] is False
         assert result['filters_remaining_after'] == 0

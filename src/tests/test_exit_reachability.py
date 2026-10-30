@@ -2,7 +2,7 @@ import socket
 
 import pytest
 
-from claude_reset import exit_reachability as reach
+from claude_reset.network import exit_reachability as reach
 from claude_reset.safeio import SafetyError
 
 PEER = '93.184.216.34'

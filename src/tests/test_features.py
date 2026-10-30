@@ -1,15 +1,17 @@
+import dataclasses
 import json
 from pathlib import Path
 import sqlite3
 import pytest
 from test_reset import paths, populated, write, database, platform, FakeCrypto, apply
-from claude_reset.core import build_plan, recover_memory
-from claude_reset.discovery import Selection
-from claude_reset.execution import Executor, operation_lock
-from claude_reset import jsonc
-from claude_reset.policy import save_policy, policy_plan
+from claude_reset.reset.planner import build_plan
+from claude_reset.reset.execution import recover_memory
+from claude_reset.model.reset import Selection
+from claude_reset.reset.execution import Executor, operation_lock
+from claude_reset.model import jsonc
+from claude_reset.reset.policy import save_policy, policy_plan
 from claude_reset.safeio import SafetyError, fingerprint, guarded
-from claude_reset.verification import template, summarize, save_evidence
+from claude_reset.reset.verification import template, summarize, save_evidence
 
 
 def plan(paths, components=('code', 'vscode', 'chrome'), selection=None, state=None, env=None):
@@ -63,7 +65,7 @@ def test_unknown_custom_root_requires_selection(paths):
     custom = paths.home / 'CustomCode'
     write(custom / '.credentials.json', '{"token":"PRIVATE"}')
     p = plan(paths, ('code',), env={'CLAUDE_CONFIG_DIR': str(custom)})
-    assert any('explicit profile selection' in b for b in p.blockers)
+    assert any('plan.custom_directory_unselected' in b for b in p.blockers)
     assert 'PRIVATE' not in json.dumps(p.redacted())
 
 
@@ -104,7 +106,7 @@ def test_custom_config_cannot_be_user_home(paths):
 def test_unknown_user_work_inside_config_blocks(paths):
     write(paths.home / '.claude/my-important-document.txt', 'KEEP')
     p = plan(paths, ('code',))
-    assert any('Unknown entries' in b for b in p.blockers)
+    assert any('plan.code_unknown_entries' in b for b in p.blockers)
     with pytest.raises(SafetyError):
         apply(paths, p)
     assert (paths.home / '.claude/my-important-document.txt').read_text() == 'KEEP'
@@ -128,7 +130,7 @@ def test_cleanup_marker_does_not_allow_similarly_named_user_work(paths):
     write(root / '.last-cleanup', '2026-10-23T00:00:00.000Z')
     write(root / '.last-cleanup-notes.md', 'KEEP')
     p = plan(paths, ('code',))
-    assert any('Unknown entries' in b for b in p.blockers)
+    assert any('plan.code_unknown_entries' in b for b in p.blockers)
     with pytest.raises(SafetyError):
         apply(paths, p)
     assert (root / '.last-cleanup-notes.md').read_text() == 'KEEP'
@@ -139,7 +141,7 @@ def test_project_hook_and_auth_block_without_leaking(paths):
     write(project / '.claude/settings.local.json', '{"env":{"ANTHROPIC_API_KEY":"SECRET123"},"hooks":{"x":"TOKEN_COPY_COMMAND"}}')
     before = fingerprint(project, project)
     p = plan(paths, ('code',), Selection(projects=[str(project)]))
-    assert any('Project authentication' in b for b in p.blockers)
+    assert any('plan.project_auth' in b for b in p.blockers)
     assert 'SECRET123' not in json.dumps(p.redacted())
     assert 'TOKEN_COPY_COMMAND' not in json.dumps(p.redacted())
     assert fingerprint(project, project) == before
@@ -194,7 +196,7 @@ def test_desktop_work_and_unknown_schemas_block(paths):
     state['desktop_versions'] = ['3.1623.4']
     p = plan(paths, ('desktop',), state=state)
     assert any('export' in b for b in p.blockers)
-    assert any('Unknown Desktop' in b for b in p.blockers)
+    assert any('plan.desktop_schema_unknown' in b for b in p.blockers)
     with pytest.raises(SafetyError):
         Executor(paths, FakeCrypto(), lambda: state).apply(p, consent_id=p.id, server_step_complete=True)
     assert (root / 'local-agent-mode-sessions/work.txt').exists()
@@ -205,7 +207,7 @@ def test_strict_telemetry_is_explicit_opt_in(paths):
     apply(paths, p)
     settings = jsonc.read(paths.home / '.claude/settings.json', paths.home)
     assert settings['env']['DISABLE_TELEMETRY'] == '1'
-    assert any('Remote Control' in x for x in p.observations)
+    assert any('plan.telemetry_strict' in x for x in p.observations)
 
 
 @pytest.mark.parametrize('version,name', [
@@ -220,7 +222,7 @@ def test_desktop_journal_review_does_not_expand_unknown_scope(paths, version, na
     state = platform()
     state['desktop_versions'] = [version]
     p = plan(paths, ('desktop',), state=state)
-    assert any('Unknown Desktop data schema' in b for b in p.blockers)
+    assert any('plan.desktop_schema_unknown' in b for b in p.blockers)
     with pytest.raises(SafetyError):
         Executor(paths, FakeCrypto(), lambda: state).apply(p, consent_id=p.id, server_step_complete=True)
     assert (root / name).read_text() == 'UNKNOWN_USER_DATA'
@@ -243,15 +245,15 @@ def test_policy_blocks_new_named_profile_and_new_versions(paths):
     save_policy(policy, p, consent_id=p.id, crypto=FakeCrypto())
     write(paths.roaming / 'Code/User/profiles/new/settings.json', '{}')
     changed = policy_plan(paths, policy, crypto=FakeCrypto(), platform_state=platform(), env={})
-    assert any('profiles changed' in b for b in changed.blockers)
+    assert any('plan.policy_profiles_changed' in b for b in changed.blockers)
     state = platform()
     state['cli_version'] = '9.0.0'
-    assert any('versions changed' in b for b in policy_plan(paths, policy, crypto=FakeCrypto(), platform_state=state, env={}).blockers)
+    assert any('plan.policy_versions_changed' in b for b in policy_plan(paths, policy, crypto=FakeCrypto(), platform_state=state, env={}).blockers)
 
 
 def test_duplicate_or_reordered_actions_rejected(populated):
     p = plan(populated)
-    p.actions.insert(0, p.actions[0])
+    p = dataclasses.replace(p, actions=(p.actions[0],) + p.actions)
     with pytest.raises(SafetyError):
         apply(populated, p)
 
@@ -266,7 +268,7 @@ def test_concurrent_executor_is_blocked(paths):
 def test_checkpoint_resume_after_failure_between_actions(populated, monkeypatch):
     p = plan(populated)
     executor = Executor(populated, FakeCrypto(), platform)
-    check = executor._check_processes
+    check = executor.check_processes
     count = 0
     def fail_second(plan):
         nonlocal count
@@ -274,7 +276,7 @@ def test_checkpoint_resume_after_failure_between_actions(populated, monkeypatch)
         if count == 2:
             raise SafetyError('fixture failure')
         check(plan)
-    monkeypatch.setattr(executor, '_check_processes', fail_second)
+    executor.check_processes = fail_second
     with pytest.raises(SafetyError):
         executor.apply(p, consent_id=p.id, server_step_complete=True)
     result = Executor(populated, FakeCrypto(), platform).resume(p.id)
@@ -287,7 +289,7 @@ def test_interrupted_action_requires_review_but_memory_survives(populated, monke
     p = plan(populated)
     def fail(*args):
         raise OSError('SECRET_PATH_NOT_TO_LOG')
-    monkeypatch.setattr('claude_reset.execution.remove_owned', fail)
+    monkeypatch.setattr('claude_reset.reset.execution.remove_owned', fail)
     with pytest.raises(SafetyError):
         apply(populated, p)
     with pytest.raises(SafetyError, match='uncertain outcome'):
@@ -307,7 +309,7 @@ def test_resume_never_overwrites_new_work(populated, monkeypatch):
         calls += 1
         if calls == 2:
             raise SafetyError('stop')
-    monkeypatch.setattr(executor, '_check_processes', stop)
+    executor.check_processes = stop
     with pytest.raises(SafetyError):
         executor.apply(p, consent_id=p.id, server_step_complete=True)
     write(populated.home / '.claude/CLAUDE.md', 'NEW_WORK')
@@ -370,7 +372,8 @@ def test_pending_wal_is_not_ignored_or_modified_during_audit(paths):
 
 
 def test_identifier_comparisons_use_random_run_key_and_no_values(populated):
-    from claude_reset.identifiers import baseline, compare, verify_run
+    from claude_reset.reset.identifiers import baseline, compare
+    from claude_reset.reset.execution import verify_run
     write(populated.home / '.claude.json', '{"userID":"OLD_ACCOUNT_VALUE"}')
     p = plan(populated, ('code',))
     first, second = baseline(p, populated), baseline(p, populated)
@@ -423,18 +426,19 @@ def test_windows_locked_file_stops_apply_and_keeps_archive(populated):
 def test_abrupt_process_exit_after_deletion_preserves_dpapi_memory(populated):
     import subprocess
     import sys
-    from claude_reset.core import new_id
+    from claude_reset.model.ids import new_id
     run_id = new_id()
     child = '''
-import json, os, sys
+import dataclasses, json, os, sys
 from pathlib import Path
-from claude_reset.core import Paths, build_plan
-from claude_reset.execution import Executor
-import claude_reset.execution as engine
+from claude_reset.layout import Paths
+from claude_reset.reset.planner import build_plan
+from claude_reset.reset.execution import Executor
+import claude_reset.reset.execution as engine
 paths = Paths(*[Path(p) for p in json.loads(sys.argv[1])])
 state = json.loads(sys.argv[2])
 plan = build_plan(paths, ('code',), platform_state=state, env={})
-plan.id = sys.argv[3]
+plan = dataclasses.replace(plan, id=sys.argv[3])
 original = engine.remove_owned
 def abrupt(target, root):
     original(target, root)
@@ -461,26 +465,27 @@ def test_abrupt_checkpoint_exit_can_resume_without_false_completion(populated, c
     """Actual process death at durable journal boundaries, on disposable profiles only."""
     import subprocess
     import sys
-    from claude_reset.core import new_id
+    from claude_reset.model.ids import new_id
     run_id = new_id()
     child = '''
-import json, os, sys
+import dataclasses, json, os, sys
 from pathlib import Path
-from claude_reset.core import Paths, build_plan
-from claude_reset.execution import Executor
+from claude_reset.layout import Paths
+from claude_reset.reset.planner import build_plan
+from claude_reset.reset.execution import Executor
 paths = Paths(*[Path(p) for p in json.loads(sys.argv[1])])
 state = json.loads(sys.argv[2])
 plan = build_plan(paths, ('code',), platform_state=state, env={})
-plan.id = sys.argv[3]
+plan = dataclasses.replace(plan, id=sys.argv[3])
 executor = Executor(paths, inspect=lambda: state)
-original = executor._write_private
+original = executor.write_private
 def crash_after_checkpoint(path, value):
     original(path, value)
     if path.name == 'journal.dpapi' and value['in_progress'] is None:
         desired = 0 if sys.argv[4] == 'before_first_action' else 1
         if value['next'] == desired:
             os._exit(92)
-executor._write_private = crash_after_checkpoint
+executor.write_private = crash_after_checkpoint
 executor.apply(plan, consent_id=plan.id, server_step_complete=True)
 '''
     memory = (populated.home / '.claude/CLAUDE.md').read_bytes()
@@ -494,7 +499,7 @@ executor.apply(plan, consent_id=plan.id, server_step_complete=True)
     assert interrupted['completed'] == []
     assert interrupted['ready_for_new_account'] is False
     executor = Executor(populated, inspect=platform)
-    journal = executor._read_private(run / 'journal.dpapi')
+    journal = executor.read_private(run / 'journal.dpapi')
     assert journal['in_progress'] is None
     assert journal['next'] == (0 if checkpoint == 'before_first_action' else 1)
     resumed = executor.resume(run_id)

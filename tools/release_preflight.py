@@ -9,8 +9,8 @@ import sys
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
-from claude_reset.windows import ps_json
-from claude_reset import state_location
+from claude_reset.windows.system import ps_json
+from claude_reset import layout
 
 
 def main():
@@ -28,8 +28,8 @@ def main():
     @{os_build=[Environment]::OSVersion.Version.ToString(); elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); protected_processes=$protected; protected_services=@(Get-CimInstance Win32_Service | Where-Object {$_.Name -match 'Codex'} | Select-Object Name,State,ProcessId,PathName); tools_in_path=$tools; valid_local_code_signing_keys=$certs.Count} | ConvertTo-Json -Depth 6 -Compress
     ''')
     result['disk_free_bytes']=shutil.disk_usage(ROOT).free
-    local=state_location.physical_local_appdata()
-    result['state']=state_location.inspect(Path.home(),local,Path(os.environ['LOCALAPPDATA']))
+    local=layout.physical_local_appdata()
+    result['state']=layout.inspect(Path.home(),local,Path(os.environ['LOCALAPPDATA']))
     broker=ROOT/'work/admin-broker/v0.1.0/ClaudeResetAdminClient.exe'
     for operation in ('status','services','hcs'):
         p=subprocess.run([str(broker),'--client',operation],capture_output=True,timeout=35,creationflags=0x08000000)

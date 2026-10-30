@@ -3,14 +3,17 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from claude_reset import extension_protection as ext, l1_settings, strict_guard, wfp
+from claude_reset.network import extension_protection as ext, l1_settings
+from claude_reset.windows import wfp
 from claude_reset.safeio import SafetyError
-from claude_reset.strict_wfp import Identity, deny_rules, relay_permits
+from claude_reset.network.strict_wfp import Identity, deny_rules, relay_permits
+from claude_reset import config
+from wfp_fakes import FakeSession
 
 
 @pytest.fixture
 def paths(tmp_path):
-    return SimpleNamespace(home=tmp_path, roaming=tmp_path / 'roaming', state=tmp_path / 'state')
+    return SimpleNamespace(home=tmp_path, roaming=tmp_path / 'roaming', state=tmp_path / 'state', local=tmp_path / 'local')
 
 
 @pytest.mark.parametrize('own_wrapper', [True, False])
@@ -40,18 +43,17 @@ def test_exact_filter_subset_preserves_others(paths, mode):
     rules = deny_rules([identity])
     keys = {r.key.value() for r in rules} | {'foreign-key', 'desktop-key'}
     if mode == 'permit':
-        keys.update(r.key.value() for r in relay_permits([identity], strict_guard.GATE_PORT))
+        keys.update(r.key.value() for r in relay_permits([identity], config.RELAY_PORT))
     before = keys.copy()
     calls = []
-    class Engine:
-        handle = None
+    class Engine(FakeSession):
         def __enter__(self): return self
         def __exit__(self, *args): pass
         def own_keys(self): return keys.copy()
         def exists_verified(self, rule):
             if mode == 'changed': raise SafetyError('changed')
             return rule.key.value() in keys
-        def _call(self, name, signature, *args):
+        def native(self, name, *args, allowed=()):
             calls.append(name)
             if name == 'FwpmFilterDeleteByKey0':
                 keys.remove(ctypes.cast(args[1], ctypes.POINTER(wfp.GUID)).contents.value())
@@ -67,34 +69,31 @@ def test_exact_filter_subset_preserves_others(paths, mode):
 
 @pytest.mark.parametrize('passed', [True, False])
 def test_exclusion_uses_existing_receipt_before_settings(paths, monkeypatch, passed):
-    from claude_reset import uac_request
+    from claude_reset.elevation import request as uac_request
     calls = []
     def execute(p, operation, dispatch):
         assert p is paths and operation == 'remove'
         dispatch('exact-request')
         return {'passed': passed, 'retry_blocked': not passed}
     monkeypatch.setattr(uac_request, 'execute', execute)
-    monkeypatch.setattr(strict_guard, 'dispatch_request', lambda r, **kw: calls.append((r, kw)))
-    monkeypatch.setattr(ext, 'remove_owned_settings', lambda p: calls.append('settings'))
-    assert ext.exclude(paths)['passed'] == passed
+    assert ext.exclude(paths, dispatch=lambda r, **kw: calls.append((r, kw)),
+                       remove_settings=lambda p: calls.append('settings'))['passed'] == passed
     assert calls == [('exact-request', {'exclude_extension': True})] + (['settings'] if passed else [])
 
 
 @pytest.mark.parametrize('success', [True, False])
-def test_child_exact_receipt_and_fixed_error(paths, monkeypatch, success):
-    from claude_reset import uac_request
-    identity = dict(request_id='fixture-request', operation='remove', state_root=str(paths.state))
-    monkeypatch.setattr(uac_request, 'admit_child', lambda p, op, rid: identity)
-    events = []
-    monkeypatch.setattr(uac_request, 'child_event', lambda p, row, event: events.append((row, event)))
+def test_child_exact_receipt_and_fixed_error(paths, success):
+    from claude_reset.elevation import request as uac_request
+    from test_child_journal import records
+    request = uac_request.prepare(paths, 'remove')
     def remove(p):
         if not success:
             raise SafetyError('secret-user 9.9.9.9 password')
         return 4
-    monkeypatch.setattr(ext, 'remove_exact_filters', remove)
     report = paths.state / 'receipt.json'
-    result = ext.remove_filters(paths, report, request_id='fixture-request')
+    result = ext.remove_filters(paths, report, request_id=request.request_id, remove=remove)
     assert result['removed'] is success and result['finished']
-    assert events == [(identity, 'finish')]
+    assert result['request_id'] == request.request_id and result['state_root'] == str(paths.state)
+    assert [row['event'] for row in records(paths)] == ['finish']
     assert json.loads(report.read_text()) == result
     assert 'secret-user' not in report.read_text() and '9.9.9.9' not in report.read_text()

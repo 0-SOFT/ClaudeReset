@@ -3,7 +3,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset import l1_check, proxy_flow, remote_backend
+from claude_reset.network import l1_check, remote_backend
+from claude_reset.ui import proxy_flow
+from claude_reset.ui.text import ENGLISH, RUSSIAN
+from claude_reset import config
 
 PARTS = ('isolation_package', 'backend_task', 'backend_listening', 'controller_files', 'controller_task',
          'connection_profile', 'consent', 'relay_listening')
@@ -14,7 +17,7 @@ def facts(task='Ready', **parts):
     checks = [{'id': k, 'status': v} for k, v in ok.items()] + [{'id': 'client_desktop', 'status': 'ok'}]
     protection = 'installed' if all(v == 'ok' for v in ok.values()) else (
         'partial' if any(v == 'ok' for v in ok.values()) else 'not_installed')
-    return {'tasks': {l1_check.CONTROLLER_TASK: task}, 'report': {'protection': protection, 'checks': checks}}
+    return {'tasks': {config.CONTROLLER_TASK: task}, 'report': {'protection': protection, 'checks': checks}}
 
 
 def summarize(data, stop_reason=None, profile=None):
@@ -61,10 +64,16 @@ def test_unreadable_state_is_unknown():
 
 
 def test_draft_returns_the_fixed_hint_for_wrong_fields():
-    draft, error = proxy_flow.draft('socks5', 'not-an-ip', '1080', '', '')
+    draft, error = proxy_flow.draft('socks5', 'not-an-ip', '1080', '', '', language=RUSSIAN)
     assert draft is None and 'IPv4' in error
-    draft, error = proxy_flow.draft('socks5', '9.9.9.9', '1080', 'user', 'secret-pass')
+    draft, error = proxy_flow.draft('socks5', '9.9.9.9', '1080', 'user', 'secret-pass', language=RUSSIAN)
     assert error is None and draft.profile['host'] == '9.9.9.9'
+
+
+def test_draft_hint_is_in_the_window_language():
+    _, russian = proxy_flow.draft('socks5', 'not-an-ip', '1080', '', '', language=RUSSIAN)
+    _, english = proxy_flow.draft('socks5', 'not-an-ip', '1080', '', '', language=ENGLISH)
+    assert russian != english and 'IPv4' in english and not any('а' <= c <= 'я' for c in english.lower())
 
 
 class Draft:

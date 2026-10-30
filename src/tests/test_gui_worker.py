@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset.gui_worker import Worker
+from claude_reset.ui.worker import Worker
 
 
 def terminal(worker):

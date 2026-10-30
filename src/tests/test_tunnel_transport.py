@@ -3,8 +3,8 @@ import socket
 import base64
 import threading
 import pytest
-from claude_reset import tunnel_transport as transport
-from claude_reset.connections import read_exact
+from claude_reset.network import tunnel_transport as transport
+from claude_reset.network.connections import read_exact
 from claude_reset.safeio import SafetyError
 
 

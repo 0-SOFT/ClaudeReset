@@ -10,7 +10,7 @@ from multiprocessing.connection import AuthenticationError, Client, Listener
 
 import pytest
 
-from claude_reset import protected_run as run
+from claude_reset.network import protected_run as run
 from claude_reset.safeio import SafetyError
 
 
@@ -136,34 +136,46 @@ def find_ping(marker):
 
 
 def test_disable_flag_runs_the_binary_directly(home, monkeypatch):
-    monkeypatch.setattr(run, 'state_folder', lambda: home / '.claude-reset')
     (home / '.claude-reset').mkdir()
     (home / '.claude-reset' / 'disable-wrapper.flag').write_text('')
     monkeypatch.setattr(run.Path, 'home', classmethod(lambda cls: home))
     called = []
-    monkeypatch.setattr(run, 'run_direct', lambda argv: called.append(argv) or 0)
     never = lambda *a, **k: pytest.fail('package launch must not be attempted')
-    assert run.wrapper_main([str(home / '.local/bin/claude.exe'), '-p'], connector=never) == 0
+    assert run.wrapper_main([str(home / '.local/bin/claude.exe'), '-p'], connector=never,
+                            direct=lambda argv: called.append(argv) or 0) == 0
     assert called and called[0][1] == '-p'
 
 
 def test_pump_failure_falls_back_visibly_and_is_logged(home, monkeypatch, capfd):
-    monkeypatch.setattr(run, 'state_folder', lambda: home / '.claude-reset')
     monkeypatch.setattr(run.Path, 'home', classmethod(lambda cls: home))
-    monkeypatch.setattr(run, 'run_direct', lambda argv: 5)
 
     def refuse(executable):
         raise SafetyError('Package launch refused')
-    assert run.wrapper_main([str(home / '.local/bin/claude.exe')], connector=refuse) == 5
+    assert run.wrapper_main([str(home / '.local/bin/claude.exe')], connector=refuse, direct=lambda argv: 5) == 5
     assert 'without coverage of child processes' in capfd.readouterr().err
     row = json.loads((home / '.claude-reset' / 'protected-run.log').read_text('ascii').splitlines()[-1])
     assert row['mode'] == 'direct' and row['reason'] == 'SafetyError' and set(row) == {'utc', 'mode', 'reason'}
 
 
 def test_wrapper_refuses_an_unreviewed_binary(home, tmp_path, monkeypatch):
-    monkeypatch.setattr(run, 'state_folder', lambda: home / '.claude-reset')
     monkeypatch.setattr(run.Path, 'home', classmethod(lambda cls: home))
     other = tmp_path / 'claude.exe'
     shutil.copyfile(r'C:\Windows\System32\cmd.exe', other)
     never = lambda *a, **k: pytest.fail('must not connect for an unreviewed binary')
     assert run.wrapper_main([str(other)], connector=never) == 126
+
+
+def test_an_adopted_child_ends_with_its_job():
+    import ctypes
+    import sys
+    from claude_reset.windows.job import KillOnClose
+    job = KillOnClose()
+    assert job.handle
+    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+    try:
+        job.adopt(child)
+        ctypes.WinDLL('kernel32').CloseHandle(ctypes.c_void_p(job.handle))   # KILL_ON_JOB_CLOSE
+        child.wait(timeout=10)
+    finally:
+        if child.poll() is None:
+            child.kill()

@@ -1,5 +1,5 @@
 """Markdown help rendering: blocks and inline styles."""
-from claude_reset import markdown_view
+from claude_reset.ui import markdown_view
 
 
 def test_blocks_cover_the_guide_constructs():
@@ -26,7 +26,7 @@ def test_inline_styles_and_links_show_text_only():
 
 
 def test_the_bundled_guide_parses_without_losing_text():
-    from claude_reset import help_docs
+    from claude_reset.ui import help_docs
     _, content = help_docs.read_document('guide')
     blocks = markdown_view.blocks(content)
     assert blocks[0][0] == 'h1' and any(kind == 'number' for kind, _ in blocks)

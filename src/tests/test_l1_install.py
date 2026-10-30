@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from claude_reset import l1_install as inst
+from claude_reset.network import l1_install as inst
+from claude_reset import layout
+from claude_reset.elevation import claims
+from claude_reset.model.status import NextAction
 
 
 def state(**statuses):
@@ -91,11 +94,11 @@ def test_full_run_follows_the_safe_order_and_ends_installed(paths):
 def test_extension_is_excluded_by_default_and_the_flag_is_written(paths):
     report = run(paths, Fake(), confirmed=True)
     assert report['extension_protection'] == 'excluded'
-    assert (paths.state / 'strict-guard' / inst.EXCLUDE_FLAG).is_file()
+    assert (paths.state / 'strict-guard' / layout.EXTENSION_EXCLUDED_FLAG).is_file()
 
 
 def test_protecting_the_extension_removes_the_flag_and_applies_its_proxy_after_the_relay_is_up(paths):
-    flag = paths.state / 'strict-guard' / inst.EXCLUDE_FLAG
+    flag = paths.state / 'strict-guard' / layout.EXTENSION_EXCLUDED_FLAG
     flag.parent.mkdir(parents=True)
     flag.write_text('x')
     fake = Fake()
@@ -106,7 +109,7 @@ def test_protecting_the_extension_removes_the_flag_and_applies_its_proxy_after_t
 
 def test_failing_extension_proxy_is_reported_with_the_manual_step(paths):
     report = run(paths, Fake(extension=True), confirmed=True, protect_extension=True)
-    assert report['status'] == 'extension_proxy_failed' and 'vscode_claude_proxy' in report['steps'][-1]['next']
+    assert report['status'] == 'extension_proxy_failed' and report['steps'][-1]['next'] == NextAction.SET_EXTENSION_PROXY
 
 
 def test_blocked_pc_stops_before_anything_changes(paths):
@@ -122,13 +125,13 @@ def test_blocked_pc_stops_before_anything_changes(paths):
 def test_missing_exit_profile_stops_with_the_command_to_run(paths):
     fake = Fake(initial=state(connection_profile='missing'))
     report = run(paths, fake, confirmed=True)
-    assert report['status'] == 'needs_connection_profile' and 'connection-save' in report['steps'][-1]['next'] and fake.calls == ['check']
+    assert report['status'] == 'needs_connection_profile' and report['steps'][-1]['next'] == NextAction.SAVE_CONNECTION_PROFILE and fake.calls == ['check']
 
 
 def test_missing_backend_stops_with_the_command_to_run(paths):
     fake = Fake(initial=state(backend_task='missing', backend_listening='missing'))
     report = run(paths, fake, confirmed=True)
-    assert report['status'] == 'needs_backend' and 'l1-backend-install' in report['steps'][-1]['next'] and fake.calls == ['check']
+    assert report['status'] == 'needs_backend' and report['steps'][-1]['next'] == NextAction.INSTALL_BACKEND and fake.calls == ['check']
 
 
 def test_without_confirmation_it_registers_the_package_then_stops_with_the_boundaries(paths):
@@ -170,11 +173,11 @@ def installed(**more):
 def test_an_installed_controller_keeps_a_protected_extension_when_no_choice_is_given(paths):
     fake = Fake(initial=installed(relay_listening='ok'))
     report = run(paths, fake)                         # protect_extension=None: keep
-    assert report['extension_protection'] == 'protected' and not (paths.state / 'strict-guard' / inst.EXCLUDE_FLAG).exists()
+    assert report['extension_protection'] == 'protected' and not (paths.state / 'strict-guard' / layout.EXTENSION_EXCLUDED_FLAG).exists()
 
 
 def test_an_installed_controller_keeps_an_excluded_extension_when_no_choice_is_given(paths):
-    flag = paths.state / 'strict-guard' / inst.EXCLUDE_FLAG
+    flag = paths.state / 'strict-guard' / layout.EXTENSION_EXCLUDED_FLAG
     flag.parent.mkdir(parents=True)
     flag.write_text('x')
     report = run(paths, Fake(initial=installed()))
@@ -187,7 +190,7 @@ def test_a_first_install_without_a_choice_excludes_the_extension(paths):
 
 def test_an_explicit_exclusion_wins_even_over_an_installed_protected_state(paths):
     report = run(paths, Fake(initial=installed()), protect_extension=False)
-    assert report['extension_protection'] == 'excluded' and (paths.state / 'strict-guard' / inst.EXCLUDE_FLAG).exists()
+    assert report['extension_protection'] == 'excluded' and (paths.state / 'strict-guard' / layout.EXTENSION_EXCLUDED_FLAG).exists()
 
 
 def test_installed_controller_is_reused_without_a_build_or_a_uac(paths):
@@ -217,14 +220,14 @@ def test_reinstalling_a_running_controller_stops_it_before_the_swap(paths):
     state(relay_listening='ok'),
 ])
 def test_replacement_stop_failure_preserves_files_and_blocks_retry(paths, existing):
-    from claude_reset import uac_request
-    flag = paths.state / 'strict-guard' / inst.EXCLUDE_FLAG
+    from claude_reset.elevation import request as uac_request
+    flag = paths.state / 'strict-guard' / layout.EXTENSION_EXCLUDED_FLAG
     flag.parent.mkdir(parents=True)
     flag.write_bytes(b'original decision')
     fake = Fake(initial=existing, stop=True)
     result = run(paths, fake, reinstall_controller=True, protect_extension=True)
     assert result['status'] == 'controller_not_stopped'
-    assert result['retry_blocked'] is True and uac_request.blocked(paths)
+    assert result['retry_blocked'] is True and claims.blocked(paths)
     assert flag.read_bytes() == b'original decision'
     assert fake.calls == ['check', 'stop_controller']
 
@@ -247,7 +250,7 @@ def test_a_failed_start_after_a_stop_tells_the_owner_how_to_restore_the_network(
     fake = Fake(initial=state(isolation_package='ok', consent='ok', controller_task='ok', controller_files='ok', relay_listening='ok'), start=True)
     report = run(paths, fake, reinstall_controller=True)
     last = report['steps'][-1]
-    assert report['status'] == 'start_failed' and last['clients_without_network'] is True and 'schtasks /Run' in last['next']
+    assert report['status'] == 'start_failed' and last['clients_without_network'] is True and last['next'] == NextAction.START_CONTROLLER_THEN_INSTALL
 
 
 def test_a_controller_that_will_not_stop_aborts_before_the_start(paths):
@@ -262,19 +265,18 @@ def test_a_running_installed_controller_is_not_started_again(paths):
     assert report['status'] == 'installed' and 'start' not in fake.calls and 'wait_relay' not in fake.calls
 
 
-def test_run_autostart_waits_for_exact_delayed_receipt(paths, monkeypatch):
+def test_run_autostart_waits_for_exact_delayed_receipt(paths):
     import json
     from dataclasses import asdict
-    from claude_reset import uac_request as uac
+    from claude_reset.elevation import request as uac
     launched = []
     now = [0]
     def dispatch(request, *, executable):
-        assert uac.blocked(paths)
+        assert claims.blocked(paths)
         assert executable == Path('x.exe')
         assert request.state_root == str(paths.state)
         launched.append(request)
         return 42
-    monkeypatch.setattr(inst.strict_guard, 'dispatch_request', dispatch)
     folder = paths.state / 'strict-guard'
     folder.mkdir(parents=True)
     (folder / 'autostart-foreign.json').write_text(json.dumps({'finished': True, 'registered': True}))
@@ -284,9 +286,9 @@ def test_run_autostart_waits_for_exact_delayed_receipt(paths, monkeypatch):
             request = launched[0]
             row = asdict(request) | {'finished': True, 'registered': True}
             Path(request.receipt).write_text(json.dumps(row))
-    result = inst.run_autostart(Path('x.exe'), paths, sleep=sleep, clock=lambda: now[0])
+    result = inst.run_autostart(Path('x.exe'), paths, sleep=sleep, clock=lambda: now[0], dispatch=dispatch)
     assert result['passed'] and now[0] == 140
-    assert not uac.blocked(paths)
+    assert not claims.blocked(paths)
 
 
 @pytest.mark.parametrize('status', ['unknown', 'reconcile_required', 'denied'])
@@ -301,14 +303,14 @@ def test_run_autostart_outcomes_block_following_install_steps(paths, status):
     assert 'start' not in fake.calls and 'extension_proxy' not in fake.calls
 
 
-def test_run_autostart_missing_receipt_prevents_second_dispatch(paths, monkeypatch):
-    from claude_reset import uac_request as uac
+def test_run_autostart_missing_receipt_prevents_second_dispatch(paths):
+    from claude_reset.elevation import request as uac
     calls = []
-    monkeypatch.setattr(inst.strict_guard, 'dispatch_request', lambda *a, **k: calls.append(a) or 42)
-    result = inst.run_autostart(Path('x.exe'), paths, wait_seconds=0)
-    assert result['status'] == 'unknown' and uac.blocked(paths)
+    dispatch = lambda *a, **k: calls.append(a) or 42
+    result = inst.run_autostart(Path('x.exe'), paths, wait_seconds=0, dispatch=dispatch)
+    assert result['status'] == 'unknown' and claims.blocked(paths)
     with pytest.raises(FileExistsError):
-        inst.run_autostart(Path('x.exe'), paths, wait_seconds=0)
+        inst.run_autostart(Path('x.exe'), paths, wait_seconds=0, dispatch=dispatch)
     assert len(calls) == 1
 
 
@@ -316,14 +318,14 @@ def test_run_autostart_missing_receipt_prevents_second_dispatch(paths, monkeypat
 @pytest.mark.parametrize('published', ['relay_open', 'blocked_controller_stopped'])
 def test_scheduler_status_never_releases_claim_or_continues_mutations(paths, entry, published):
     from dataclasses import asdict
-    from claude_reset import uac_request as uac
+    from claude_reset.elevation import request as uac
     from claude_reset.safeio import SafetyError
     calls = []
 
     def start(folder, stale, **kwargs):
         def scheduler(*args, **kwargs):
             calls.append('scheduler')
-            request = uac._chain.get().start_request
+            request = claims.chain.get().start_request
             row = asdict(request) | {'instance': 'new', 'state': published,
                                     'passed': True, 'persistent_boundary': True,
                                     'live_permit_session': True}
@@ -339,19 +341,19 @@ def test_scheduler_status_never_releases_claim_or_continues_mutations(paths, ent
     elif entry == 'restart':
         result = inst.restart(paths, deps=fake)
     else:
-        @uac.serialized('outer', completed={'completed'})
+        @claims.serialized('outer', completed={'completed'})
         def chain(p):
             assert start(p.state / 'strict-guard', 'old')
-            assert uac.blocked(p)
+            assert claims.blocked(p)
             # A later receipt and a successful outer return cannot clear this.
-            request = uac._chain.get().start_request
+            request = claims.chain.get().start_request
             Path(request.receipt).write_text(json.dumps(asdict(request) | {
                 'finished': True, 'passed': True}))
             with pytest.raises(SafetyError):
                 uac.prepare(p, 'remove')
             return {'status': 'completed'}
         result = chain(paths)
-    assert result['retry_blocked'] and uac.blocked(paths)
+    assert result['retry_blocked'] and claims.blocked(paths)
     assert 'wait_relay' not in fake.calls and 'extension_proxy' not in fake.calls
     assert fake.checks <= 1
     if entry != 'nested':
@@ -363,9 +365,9 @@ def test_scheduler_status_never_releases_claim_or_continues_mutations(paths, ent
 @pytest.mark.parametrize('mode', ['proxy', 'extension', 'unchecked', 'exclude', 'exclude_failed', 'stop_failed', 'save_failed', 'extension_failed'])
 def test_restart_configuration_before_new_instance(paths, mode):
     calls = []
-    folder = inst.strict_guard.directory(paths)
+    folder = layout.controller(paths)
     folder.mkdir(parents=True)
-    flag = folder / inst.EXCLUDE_FLAG
+    flag = folder / layout.EXTENSION_EXCLUDED_FLAG
     flag.write_text('excluded')
     def save(p, *, confirmed):
         calls.append('save')
@@ -401,3 +403,11 @@ def test_restart_configuration_before_new_instance(paths, mode):
         assert calls == ['stop', 'extension' if mode == 'extension' else 'save', 'start']
         assert report['status'] == 'restarted'
         assert flag.exists() == (mode != 'extension')
+
+
+def test_an_interrupt_is_not_reported_as_a_failed_install(paths):
+    class Interrupted(Fake):
+        def check(self, paths):
+            raise KeyboardInterrupt
+    with pytest.raises(KeyboardInterrupt):
+        run(paths, Interrupted(), confirmed=True)

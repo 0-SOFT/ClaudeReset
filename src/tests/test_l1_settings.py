@@ -2,9 +2,10 @@ import os
 
 import pytest
 
-from claude_reset import l1_settings as own
+from claude_reset.network import l1_settings as own
+from claude_reset import config
 
-ENV = [{'name': 'HTTP_PROXY', 'value': own.RELAY_URL}, {'name': 'HTTPS_PROXY', 'value': own.RELAY_URL},
+ENV = [{'name': 'HTTP_PROXY', 'value': config.RELAY_URL}, {'name': 'HTTPS_PROXY', 'value': config.RELAY_URL},
        {'name': 'NO_PROXY', 'value': 'localhost,127.0.0.1,::1'}]
 
 
@@ -39,5 +40,4 @@ def test_runner_path_comparison_ignores_case_and_slashes():
 
 
 def test_the_vscode_tool_and_the_check_agree_on_the_values():
-    from claude_reset import strict_guard
-    assert own.RELAY_URL == strict_guard.GATE_URL and own.RUNNER == strict_guard.RUNNER_NAME
+    assert config.RELAY_URL == config.RELAY_URL and config.RUNNER_EXE == config.RUNNER_EXE

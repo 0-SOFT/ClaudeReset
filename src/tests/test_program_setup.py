@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset import program_setup
+from claude_reset.services import program_setup
 
 
 @pytest.fixture

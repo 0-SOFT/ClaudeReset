@@ -20,7 +20,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
-from claude_reset import __version__, brand, l1_install  # noqa: E402
+from claude_reset import __version__
+from claude_reset.ui import brand
+from claude_reset.network import l1_install
 
 LOCK = ROOT / 'packaging/bundle/python-lock.json'
 CSC = Path(r'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe')

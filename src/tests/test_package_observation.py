@@ -7,7 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from claude_reset import package_isolation as pkg, uac_request as uac
+from claude_reset.network import package_isolation as pkg
+from claude_reset.elevation import request as uac
+from claude_reset.elevation import claims
 from claude_reset.safeio import SafetyError
 from test_package_isolation import Windows, FAMILY, FULL
 
@@ -80,7 +82,7 @@ def test_unknown_before_operation_preserves_files_and_claim(tmp_path, operation,
     assert result['status'] == 'failed'
     assert (runtime / 'identity-stub.exe').read_bytes() == before
     assert not any('Remove-AppxPackage' in s or 'Add-AppxPackage' in s for s in runner.scripts)
-    assert uac.blocked(paths)
+    assert claims.blocked(paths)
 
 
 @pytest.mark.parametrize('after', [(1, ''), (0, 'malformed'), (0, ROW),
@@ -92,7 +94,7 @@ def test_remove_requires_absence_before_cleanup(tmp_path, after):
     assert (runtime / 'identity-stub.exe').read_bytes() == before
     assert runner.queries == 2
     assert sum('Remove-AppxPackage' in s for s in runner.scripts) == 1
-    assert uac.blocked(paths)
+    assert claims.blocked(paths)
     assert result.get('registered_after') is not False
 
 
@@ -109,19 +111,17 @@ def test_remove_uses_one_verified_postcondition_before_cleanup(tmp_path):
 def test_register_requires_matching_postcondition(tmp_path, after):
     runner = Observations([(0, ''), after])
     paths, request, runtime, before, result = invoke(tmp_path, 'package-register', runner)
-    assert result['status'] == 'failed' and uac.blocked(paths)
+    assert result['status'] == 'failed' and claims.blocked(paths)
     assert sum('Add-AppxPackage' in s for s in runner.scripts) == 1
     assert (runtime / 'identity-stub.exe').read_bytes() == before
 
 
 @pytest.mark.parametrize('error', [SafetyError('private fixture'), OSError('private fixture'),
                                   subprocess.TimeoutExpired('private fixture', 1)])
-def test_precondition_reports_unknown_without_suggesting_registration(monkeypatch, error):
-    from claude_reset import l1_mechanism as mechanism
-    def fail():
+def test_precondition_reports_unknown_without_suggesting_registration(error):
+    from claude_reset.network import l1_mechanism as mechanism
+    def fail(*args, **kwargs):   # the package query itself fails
         raise error
-    monkeypatch.setattr(pkg, 'installed', fail)
-    monkeypatch.setattr(mechanism, 'connect', lambda *args: 'refused')
-    errors = mechanism.precondition_errors()
+    errors = mechanism.precondition_errors(probe=lambda *args: 'refused', runner=fail)
     assert len(errors) == 1 and errors[0].startswith('package_state_unknown:')
     assert 'private' not in errors[0] and '--l1-package-register' not in errors[0]

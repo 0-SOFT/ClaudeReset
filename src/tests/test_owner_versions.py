@@ -2,9 +2,9 @@
 import pytest
 
 from test_reset import paths, write, platform
-from claude_reset.core import build_plan
+from claude_reset.reset.planner import build_plan
 
-VERSION_BLOCKERS = ('has not been validated',)
+VERSION_BLOCKERS = ('version_unverified',)
 
 
 def version_blockers(plan):
@@ -28,12 +28,12 @@ def test_an_unlisted_extension_version_is_still_refused(paths):
 
 @pytest.mark.parametrize('version', ['4.29.0.0', '2.31226.1.0'])
 def test_owner_desktop_versions_pass_the_version_gate(paths, version):
-    from claude_reset import catalog
+    from claude_reset.reset import catalog
     assert version in catalog.DESKTOP_VERSIONS and version in catalog.DESKTOP_JOURNAL_VERSIONS
 
 
 def test_the_account_key_reset_still_refuses_the_new_desktop_versions():
-    from claude_reset.compatibility import CLIENTS
+    from claude_reset.model.compatibility import CLIENTS
     pinned = CLIENTS['desktop']['native_reset_hashes']
     assert '4.29.0.0' not in pinned and '2.31226.1.0' not in pinned
 
@@ -43,7 +43,7 @@ def test_without_a_standalone_cli_the_extension_version_decides(paths):
     state = platform()
     state['cli_version'] = None
     state['extension_versions'] = ['2.1.311']
-    assert not [b for b in build_plan(paths, ('code',), platform_state=state, env={}).blockers if 'Claude Code version' in b]
+    assert not [b for b in build_plan(paths, ('code',), platform_state=state, env={}).blockers if 'plan.code_version_unverified' in b]
 
 
 @pytest.mark.parametrize('extension_versions', [[], ['2.1.999'], ['2.1.311', '2.1.999']])
@@ -52,7 +52,7 @@ def test_without_a_cli_and_without_a_known_extension_the_code_reset_is_still_ref
     state = platform()
     state['cli_version'] = None
     state['extension_versions'] = extension_versions
-    assert [b for b in build_plan(paths, ('code',), platform_state=state, env={}).blockers if 'Claude Code version' in b]
+    assert [b for b in build_plan(paths, ('code',), platform_state=state, env={}).blockers if 'plan.code_version_unverified' in b]
 
 
 def test_an_unknown_cli_version_is_still_refused_even_with_a_known_extension(paths):
@@ -60,7 +60,7 @@ def test_an_unknown_cli_version_is_still_refused_even_with_a_known_extension(pat
     state = platform()
     state['cli_version'] = '9.9.9'
     state['extension_versions'] = ['2.1.311']
-    assert [b for b in build_plan(paths, ('code',), platform_state=state, env={}).blockers if 'Claude Code version' in b]
+    assert [b for b in build_plan(paths, ('code',), platform_state=state, env={}).blockers if 'plan.code_version_unverified' in b]
 
 
 def test_unknown_entries_in_the_claude_profile_still_block_on_an_owner_version(paths):
@@ -70,4 +70,4 @@ def test_unknown_entries_in_the_claude_profile_still_block_on_an_owner_version(p
     state['cli_version'] = None
     state['extension_versions'] = ['2.1.311']
     blockers = build_plan(paths, ('code',), platform_state=state, env={}).blockers
-    assert any('Unknown entries' in b or 'unknown' in b.lower() for b in blockers)
+    assert any('plan.code_unknown_entries' in b or 'unknown' in b.lower() for b in blockers)

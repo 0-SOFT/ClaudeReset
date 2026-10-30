@@ -14,14 +14,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from claude_reset import jsonc
-from claude_reset.core import Paths
+from claude_reset.model import jsonc
+from claude_reset.layout import Paths
 from claude_reset.safeio import atomic_bytes
-from claude_reset.windows import DPAPI
+from claude_reset.windows.system import DPAPI
 
-from claude_reset import l1_settings
+from claude_reset import config
+from claude_reset.network import l1_settings
 
-GATE = l1_settings.RELAY_URL
+GATE = config.RELAY_URL
 WANTED = [{'name': name, 'value': value} for name, value in l1_settings.OWNED_ENV]
 KEY = 'claudeCode.environmentVariables'
 WRAPPER_KEY = 'claudeCode.claudeProcessWrapper'

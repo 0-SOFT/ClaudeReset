@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from claude_reset import controller_process as cp
+from claude_reset.network import controller_process as cp
 from claude_reset.safeio import SafetyError
 
 
@@ -121,7 +121,7 @@ def test_native_handle_waits_for_only_the_test_child():
     with subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.readline()'],
                           stdin=subprocess.PIPE, creationflags=0x08000000) as child:
         try:
-            with cp.Process(child.pid) as witness:
+            with cp.RetainedProcess(child.pid) as witness:
                 assert witness.created == cp.generation(child.pid)
                 assert not witness.wait(0)
                 child.communicate(b'finish\n', timeout=10)

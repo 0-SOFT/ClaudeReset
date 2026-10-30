@@ -1,7 +1,7 @@
 import ctypes as C
 import os
 import pytest
-from claude_reset.install_service_security import Reader, validate, ALL_ACCESS, MUTATE
+from claude_reset.windows.service_security import Reader, validate, ALL_ACCESS, MUTATE
 from claude_reset.safeio import SafetyError
 
 

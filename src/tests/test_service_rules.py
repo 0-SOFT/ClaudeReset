@@ -4,8 +4,10 @@ import hashlib
 import json
 import uuid
 import pytest
-from claude_reset import strict_wfp as s, wfp, gateway_reservation
+from claude_reset.network import strict_wfp as s, gateway_reservation
+from claude_reset.windows import wfp
 from claude_reset.safeio import SafetyError
+from wfp_fakes import fake
 
 
 def image(tmp_path):
@@ -27,13 +29,13 @@ def test_legacy_filter_keys_and_serialization_remain_unchanged(tmp_path):
 def test_service_permit_native_conditions_include_exact_image_and_token(tmp_path, monkeypatch, layer, address):
     rule = s.ServiceRule(image(tmp_path), layer, s.PERMIT, address, 25080, False, 'ClaudeResetBackend')
     data = (C.c_ubyte * 4)(1,2,3,4); blob = wfp.BLOB(4, data)
-    engine = object.__new__(s.Engine); engine.dynamic = True
-    def call(name, signature, *args, **kwargs):
+    engine = fake(s.Engine)(dynamic=True)
+    def call(name, *args, **kwargs):
         assert name == 'FwpmGetAppIdFromFileName0'
         C.cast(args[-1], C.POINTER(C.POINTER(wfp.BLOB)))[0] = C.pointer(blob)
-    engine._call = call; engine._free = lambda pointer: None
+    engine.native = call; engine.free = lambda pointer: None
     descriptor = b'fixture-security-descriptor'
-    monkeypatch.setattr(gateway_reservation, 'service_descriptor', lambda name: descriptor if name=='ClaudeResetBackend' else pytest.fail('Wrong service'))
+    monkeypatch.setattr(s, 'service_descriptor', lambda name: descriptor if name=='ClaudeResetBackend' else pytest.fail('Wrong service'))
     native, keep = engine._native(rule)
     assert native.numFilterConditions == 5
     fields = [c.fieldKey.value() for c in native.filterCondition[:5]]

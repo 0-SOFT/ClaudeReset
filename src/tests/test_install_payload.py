@@ -2,7 +2,7 @@ import hashlib
 import json
 import os
 import pytest
-from claude_reset import install_payload as p
+from claude_reset.backend import payload as p
 from claude_reset.safeio import SafetyError
 
 

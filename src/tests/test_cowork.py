@@ -1,14 +1,14 @@
 import json
 import pytest
 from test_reset import paths, write, FakeCrypto
-from claude_reset import cowork as cw
-from claude_reset import desktop_keys as dk
+from claude_reset.reset import cowork as cw
+from claude_reset.reset import desktop_keys as dk
 from claude_reset.safeio import SafetyError
 
 
 @pytest.fixture
 def setup_cowork(paths, monkeypatch):
-    profile = paths.local / 'desktop'
+    profile = cw.profiles(paths)[0]   # the Desktop data folder of the test profile
     write(profile / 'local-agent-mode-sessions/session/.claude/memory/MEMORY.md', '')
     (profile / 'local-agent-mode-sessions/session/.claude/memory/MEMORY.md').write_bytes(b'verbatim\r\nmemory')
     write(profile / 'local-agent-mode-sessions/session/outputs/result.txt', 'RESULT')
@@ -16,10 +16,7 @@ def setup_cowork(paths, monkeypatch):
     write(profile / 'local-agent-mode-sessions/session/.claude/.credentials.json', '{"token":"DO NOT EXPORT"}')
     write(profile / 'vm_bundles/claudevm.bundle/rootfs.vhdx', 'SYSTEM IMAGE')
     write(profile / 'vm_bundles/claudevm.bundle/smol-bin.vhdx', 'SYSTEM TOOL IMAGE')
-    monkeypatch.setattr(cw, 'profile_path', lambda paths, value: profile)
     monkeypatch.setattr(cw, 'no_owners', lambda: None)
-    monkeypatch.setattr(cw, 'DPAPI', FakeCrypto)
-    monkeypatch.setattr(dk, 'DPAPI', FakeCrypto)
     return profile
 
 

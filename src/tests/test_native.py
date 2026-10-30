@@ -3,9 +3,10 @@ import json
 import hashlib
 import pytest
 from test_reset import paths, write, FakeCrypto
-from claude_reset import desktop_keys as dk
+from claude_reset.reset import desktop_keys as dk
 from claude_reset.safeio import SafetyError
-from claude_reset.cng import KEY_PATTERN
+from claude_reset.windows.cng import KEY_PATTERN
+from scripted import Scripted
 
 ACCOUNT = '10000000-0000-4000-8000-000000000001'
 OTHER = '20000000-0000-4000-8000-000000000002'
@@ -21,9 +22,8 @@ def test_installation_binds_package_and_both_code_files(tmp_path, monkeypatch, t
     native.parent.mkdir(parents=True)
     asar.write_bytes(b'reviewed javascript')
     native.write_bytes(b'reviewed native binding')
-    monkeypatch.setattr(dk, 'VALIDATED_INSTALLATIONS', {version: tuple(hashlib.sha256(p.read_bytes()).hexdigest() for p in (asar, native))})
+    validated = {version: tuple(hashlib.sha256(p.read_bytes()).hexdigest() for p in (asar, native))}
     package = {'Version':version, 'PackageFamilyName':dk.FAMILY, 'InstallLocation':str(tmp_path)}
-    monkeypatch.setattr(dk, 'ps_json', lambda _:package)
     if tamper in ('asar', 'native'):
         (asar if tamper == 'asar' else native).write_bytes(b'changed code')
     elif tamper == 'version':
@@ -32,9 +32,9 @@ def test_installation_binds_package_and_both_code_files(tmp_path, monkeypatch, t
         package['PackageFamilyName'] = 'OtherPackage'
     if tamper:
         with pytest.raises(SafetyError):
-            dk.verify_installation()
+            dk.verify_installation(package=package, validated=validated)
     else:
-        dk.verify_installation()
+        dk.verify_installation(package=package, validated=validated)
 
 
 def test_unconfirmed_registration_cannot_authorize_key_deletion():
@@ -53,10 +53,6 @@ def native_setup(paths, monkeypatch):
     profile = paths.local / 'desktop'
     write(profile / dk.FILES[0], json.dumps({ACCOUNT: 'pk1:' + 'a' * 64 + ':' + OTHER}))
     inventory = {'keys': [key()], 'unknown_application_keys': 0}
-    monkeypatch.setattr(dk, 'verify_installation', lambda: None)
-    monkeypatch.setattr(dk, 'no_owners', lambda: None)
-    monkeypatch.setattr(dk, 'profile_path', lambda paths, value: profile)
-    monkeypatch.setattr(dk, 'DPAPI', FakeCrypto)
     calls = []
     def call(paths, operation, **args):
         if operation == 'inventory':
@@ -67,40 +63,40 @@ def native_setup(paths, monkeypatch):
         inventory['keys'].remove(target)
         calls.append(args['name'])
         return {'deleted_key_absent': True}
-    monkeypatch.setattr(dk, 'call_native', call)
-    return profile, inventory, calls
+    desktop = Scripted(verify_installation=None, no_owners=None, profile=lambda paths, value: profile, native=call)
+    return profile, inventory, calls, desktop
 
 
 def test_native_plan_deletes_only_selected_generations(paths, native_setup):
-    profile, inventory, calls = native_setup
+    profile, inventory, calls, desktop = native_setup
     inventory['keys'] += [key(generation=1, digest='b'*64), key(OTHER)]
     inventory['keys'].sort(key=lambda k: k['name'])
-    plan = dk.create_plan(paths, profile)
+    plan = dk.create_plan(paths, profile, desktop=desktop)
     assert plan['keys'] == 2 and plan['unselected_keys_preserved'] == 1
     assert ACCOUNT not in json.dumps(plan)
-    result = dk.apply_plan(paths, plan['run'], server_step_complete=True)
+    result = dk.apply_plan(paths, plan['run'], server_step_complete=True, desktop=desktop)
     assert result['status'] == 'completed'
     assert inventory['keys'] == [key(OTHER)]
     assert len(calls) == 2 and not (profile / dk.FILES[0]).exists()
 
 
 def test_native_requires_server_ack(paths, native_setup):
-    profile, inventory, calls = native_setup
-    plan = dk.create_plan(paths, profile)
+    profile, inventory, calls, desktop = native_setup
+    plan = dk.create_plan(paths, profile, desktop=desktop)
     with pytest.raises(SafetyError):
-        dk.apply_plan(paths, plan['run'])
+        dk.apply_plan(paths, plan['run'], desktop=desktop)
     assert not calls and len(inventory['keys']) == 1
 
 
 def test_verify_new_client_key_redacts_accounts_and_preserves_receipt(paths, native_setup):
-    profile, inventory, calls = native_setup
-    plan = dk.create_plan(paths, profile)
-    dk.apply_plan(paths, plan['run'], server_step_complete=True)
+    profile, inventory, calls, desktop = native_setup
+    plan = dk.create_plan(paths, profile, desktop=desktop)
+    dk.apply_plan(paths, plan['run'], server_step_complete=True, desktop=desktop)
     receipt = paths.state / 'key-runs' / plan['run'] / 'result.json'
     original = receipt.read_bytes()
     inventory['keys'] = [key(OTHER, digest='b'*64)]
     write(profile / dk.FILES[0], json.dumps({OTHER: 'pk1:' + 'b'*64 + ':' + ACCOUNT}))
-    result = dk.verify_after_reset(paths, plan['run'])
+    result = dk.verify_after_reset(paths, plan['run'], desktop=desktop)
     assert result['status'] == 'verified' and result['new_account_registration_observed']
     assert not result['old_selected_public_key_present']
     assert not result['account_and_organization_verified'] and not result['ready_for_new_account']
@@ -109,50 +105,50 @@ def test_verify_new_client_key_redacts_accounts_and_preserves_receipt(paths, nat
 
 
 def test_verify_absent_new_registration_is_not_success(paths, native_setup):
-    profile, inventory, calls = native_setup
-    plan = dk.create_plan(paths, profile)
-    dk.apply_plan(paths, plan['run'], server_step_complete=True)
-    result = dk.verify_after_reset(paths, plan['run'])
+    profile, inventory, calls, desktop = native_setup
+    plan = dk.create_plan(paths, profile, desktop=desktop)
+    dk.apply_plan(paths, plan['run'], server_step_complete=True, desktop=desktop)
+    result = dk.verify_after_reset(paths, plan['run'], desktop=desktop)
     assert result['status'] == 'not_verified' and not result['new_registered_public_key_verified']
 
 
 def test_verify_detects_returned_old_public_key(paths, native_setup):
-    profile, inventory, calls = native_setup
-    plan = dk.create_plan(paths, profile)
-    dk.apply_plan(paths, plan['run'], server_step_complete=True)
+    profile, inventory, calls, desktop = native_setup
+    plan = dk.create_plan(paths, profile, desktop=desktop)
+    dk.apply_plan(paths, plan['run'], server_step_complete=True, desktop=desktop)
     inventory['keys'] = [key()]
     write(profile / dk.FILES[0], json.dumps({ACCOUNT: 'pk1:' + 'a'*64 + ':' + OTHER}))
-    result = dk.verify_after_reset(paths, plan['run'])
+    result = dk.verify_after_reset(paths, plan['run'], desktop=desktop)
     assert result['status'] == 'not_verified' and result['old_selected_public_key_present']
 
 
 def test_verify_requires_completed_reset_and_consistent_registration(paths, native_setup):
-    profile, inventory, calls = native_setup
-    plan = dk.create_plan(paths, profile)
+    profile, inventory, calls, desktop = native_setup
+    plan = dk.create_plan(paths, profile, desktop=desktop)
     with pytest.raises(SafetyError):
-        dk.verify_after_reset(paths, plan['run'])
-    dk.apply_plan(paths, plan['run'], server_step_complete=True)
+        dk.verify_after_reset(paths, plan['run'], desktop=desktop)
+    dk.apply_plan(paths, plan['run'], server_step_complete=True, desktop=desktop)
     inventory['keys'] = [key(OTHER, digest='b'*64)]
     write(profile / dk.FILES[0], json.dumps({OTHER: 'pk1:' + 'c'*64 + ':' + ACCOUNT}))
     with pytest.raises(SafetyError):
-        dk.verify_after_reset(paths, plan['run'])
+        dk.verify_after_reset(paths, plan['run'], desktop=desktop)
 
 
 def test_verify_allows_same_account_with_regenerated_key(paths, native_setup):
-    profile, inventory, calls = native_setup
-    plan = dk.create_plan(paths, profile)
-    dk.apply_plan(paths, plan['run'], server_step_complete=True)
+    profile, inventory, calls, desktop = native_setup
+    plan = dk.create_plan(paths, profile, desktop=desktop)
+    dk.apply_plan(paths, plan['run'], server_step_complete=True, desktop=desktop)
     inventory['keys'] = [key(digest='b'*64)]
     write(profile / dk.FILES[0], json.dumps({ACCOUNT: 'pk1:' + 'b'*64 + ':' + OTHER}))
-    result = dk.verify_after_reset(paths, plan['run'])
+    result = dk.verify_after_reset(paths, plan['run'], desktop=desktop)
     assert result['status'] == 'verified' and result['previous_account_registration_present']
     assert not result['new_account_registration_observed']
 
 
 @pytest.mark.parametrize('change', ['registry', 'key', 'new_key', 'generation'])
 def test_native_drift_blocks_before_deletion(paths, native_setup, change):
-    profile, inventory, calls = native_setup
-    plan = dk.create_plan(paths, profile)
+    profile, inventory, calls, desktop = native_setup
+    plan = dk.create_plan(paths, profile, desktop=desktop)
     if change == 'registry':
         write(profile / dk.FILES[0], '{}')
     elif change == 'generation':
@@ -162,25 +158,25 @@ def test_native_drift_blocks_before_deletion(paths, native_setup, change):
     else:
         inventory['keys'].append(key(OTHER))
     with pytest.raises(SafetyError):
-        dk.apply_plan(paths, plan['run'], server_step_complete=True)
+        dk.apply_plan(paths, plan['run'], server_step_complete=True, desktop=desktop)
     assert not calls
 
 
 def test_native_crash_after_delete_can_verify_and_resume(paths, native_setup, monkeypatch):
-    profile, inventory, calls = native_setup
-    plan = dk.create_plan(paths, profile)
-    original = dk.call_native
+    profile, inventory, calls, desktop = native_setup
+    plan = dk.create_plan(paths, profile, desktop=desktop)
+    original = desktop.answers['native']
     def crash(paths, operation, **args):
         value = original(paths, operation, **args)
         if operation == 'delete':
             raise OSError('synthetic interrupted response')
         return value
-    monkeypatch.setattr(dk, 'call_native', crash)
+    desktop.answers['native'] = crash
     with pytest.raises(SafetyError):
-        dk.apply_plan(paths, plan['run'], server_step_complete=True)
+        dk.apply_plan(paths, plan['run'], server_step_complete=True, desktop=desktop)
     assert (profile / dk.FILES[0]).exists()
-    monkeypatch.setattr(dk, 'call_native', original)
-    assert dk.apply_plan(paths, plan['run'], server_step_complete=True)['status'] == 'completed'
+    desktop.answers['native'] = original
+    assert dk.apply_plan(paths, plan['run'], server_step_complete=True, desktop=desktop)['status'] == 'completed'
     assert len(calls) == 1
 
 

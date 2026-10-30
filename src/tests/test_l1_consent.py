@@ -1,6 +1,6 @@
 import pytest
 
-from claude_reset import l1_consent as consent
+from claude_reset.network import l1_consent as consent
 from claude_reset.safeio import SafetyError
 
 

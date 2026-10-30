@@ -2,9 +2,11 @@ import os
 from types import SimpleNamespace
 import sys
 import pytest
-from claude_reset import backend_boundary as boundary, backend_runtime as runtime
-from claude_reset.service_identity import Process, service_sid
+from claude_reset.backend import boundary, runtime
+from claude_reset.windows.service_identity import Process, service_sid
 from claude_reset.safeio import SafetyError
+from wfp_fakes import FakeSession
+from functools import partial
 
 
 def test_service_sid_matches_windows_sc_showsid():
@@ -41,25 +43,23 @@ def test_backend_boundary_contains_no_client_or_shared_process_permits(tmp_path)
     for rule in (*closed,*opened): rule.validate()
 
 
-def test_probe_uses_http_gateway_even_with_socks_backend(monkeypatch):
+def test_probe_uses_http_gateway_even_with_socks_backend():
     platform = runtime.Platform(); platform.protocol = 'socks5'
     platform.spec = {'gateway_port':1081,'expected_exit_ips':['8.8.8.8']}
     observed = []
     def measurement(proxy):
         observed.append(proxy); return {'status':'measured','exit_ip':'8.8.8.8'}
-    monkeypatch.setattr(runtime,'measure',measurement)
+    platform.measure = measurement
     assert platform.probe() is True and observed == ['http://127.0.0.1:1081']
     platform.spec['expected_exit_ips'] = ['9.9.9.9']
     assert platform.probe() is False
 
 
 @pytest.mark.parametrize('failure',[None,'missing','changed'])
-def test_reservation_sublayer_is_checked_before_accepting_matching_filters(monkeypatch,tmp_path,failure):
+def test_reservation_sublayer_is_checked_before_accepting_matching_filters(tmp_path,failure):
     events=[]
     keys={f'{service}:{layer}:{allow}' for service in ('ClaudeResetBackend','ClaudeResetGateway') for layer in boundary.RESERVATION_LAYERS for allow in (False,True)}
-    class Engine:
-        handle=1
-        def _call(self,*args):pass
+    class Engine(FakeSession):
         def own_keys(self):return {'deny'}
         def __enter__(self):return self
         def __exit__(self,*args):pass
@@ -74,13 +74,12 @@ def test_reservation_sublayer_is_checked_before_accepting_matching_filters(monke
             if failure=='changed':raise SafetyError('changed reservation security')
             return failure!='missing'
         def verified(self,*args):events.append('filter');return True
-    monkeypatch.setattr(boundary,'Engine',Engine)
-    monkeypatch.setattr(boundary,'Reservation',Reservation)
-    monkeypatch.setattr(boundary,'rules',lambda *a,**kw:([SimpleNamespace(key=SimpleNamespace(value=lambda:'deny'))],['expected']))
+    expected=lambda *a,**kw:([SimpleNamespace(key=SimpleNamespace(value=lambda:'deny'))],['expected'])
+    verify=partial(boundary.verify_installed,engine=Engine,reservation=Reservation,expected=expected)
     spec=dict(peer_address='1.1.1.1',peer_port=443,backend_port=1080,gateway_port=1081)
     if failure:
-        with pytest.raises(SafetyError):boundary.verify_installed(tmp_path,spec)
+        with pytest.raises(SafetyError):verify(tmp_path,spec)
         assert events==['sublayer']
     else:
-        assert boundary.verify_installed(tmp_path,spec)==['expected']
+        assert verify(tmp_path,spec)==['expected']
         assert events==(['sublayer']+['filter']*8)*2

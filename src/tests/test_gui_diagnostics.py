@@ -3,46 +3,28 @@ import json
 import pytest
 from test_reset import paths
 
-from claude_reset import diagnostics as d
+from claude_reset.services import diagnostics as d
 from claude_reset.safeio import SafetyError, atomic_json
+import shutil
 
 
 SECRET = 'private-person password-canary 203.0.113.45 2001:db8::45'
 
 
-@pytest.fixture(autouse=True)
-def substitute_native_reader(monkeypatch):
-    from contextlib import contextmanager
-    from types import SimpleNamespace
-
-    @contextmanager
-    def read(path, *, limit):
-        with path.open('rb') as stream:
-            data = stream.read(limit + 1)
-        if len(data) > limit:
-            raise SafetyError('fixture size limit')
-        yield SimpleNamespace(data=data)
-
-    monkeypatch.setattr(d, 'PinnedFile', read)
-
-
-def test_temporary_profile_is_read_only(paths, monkeypatch):
-    monkeypatch.setattr(d.l1_check, 'check', lambda p: {'protection': 'not_installed'})
+def test_temporary_profile_is_read_only(paths):
     target = paths.home / '.claude.json'
     target.write_text(SECRET, encoding='utf-8')
-    result = d.collect(paths)
+    result = d.collect(paths, check=lambda p: {'protection': 'not_installed'})
     assert result['files']['present_locations'] >= 1
     assert not result['files']['zero_fixed_file_remainder']
     assert target.read_text(encoding='utf-8') == SECRET
     assert all(word not in json.dumps(result) for word in SECRET.split())
 
 
-def test_collect_and_export(tmp_path, monkeypatch):
-    monkeypatch.setattr(d.l1_check, 'check', lambda p: {
-        'protection': 'partial', 'detail': SECRET, SECRET: SECRET})
-    monkeypatch.setattr(d.cleanup, 'audit', lambda p: {
-        'complete': True, 'rows': [{'status': 'absent', 'label': SECRET}], 'extra': SECRET})
-    result = d.collect(tmp_path)
+def test_collect_and_export(tmp_path):
+    result = d.collect(tmp_path, check=lambda p: {'protection': 'partial', 'detail': SECRET, SECRET: SECRET},
+                       audit=lambda p: {'complete': True, 'rows': [{'status': 'absent', 'label': SECRET}],
+                                        'extra': SECRET})
     assert result['collection_complete'] is True
     assert result['files']['zero_fixed_file_remainder'] is True
     assert result['files']['zero_total_remainder'] is False
@@ -54,8 +36,8 @@ def test_collect_and_export(tmp_path, monkeypatch):
     for word in SECRET.split():
         assert word not in saved
     assert json.loads(saved) == result
-    assert any('Chrome/Edge' in x for x in result['limitations'])
-    assert any('Cowork' in x for x in result['limitations'])
+    assert 'diagnostics.limit.browsers' in result['limitations']
+    assert 'diagnostics.limit.cowork' in result['limitations']
 
 
 @pytest.mark.parametrize('raw', [
@@ -64,10 +46,8 @@ def test_collect_and_export(tmp_path, monkeypatch):
     {'complete': True, 'rows': [{'status': SECRET}]},
     {'complete': True, 'rows': None},
 ])
-def test_incomplete_never_zero(monkeypatch, raw):
-    monkeypatch.setattr(d.l1_check, 'check', lambda p: {'protection': SECRET})
-    monkeypatch.setattr(d.cleanup, 'audit', lambda p: raw)
-    result = d.collect(None)
+def test_incomplete_never_zero(raw):
+    result = d.collect(None, check=lambda p: {'protection': SECRET}, audit=lambda p: raw)
     assert not result['collection_complete']
     assert not result['files']['zero_fixed_file_remainder']
     assert SECRET not in json.dumps(result)
@@ -77,11 +57,9 @@ def fail(*args):
     raise RuntimeError(SECRET)
 
 
-def test_failures_are_independent_and_private(monkeypatch):
-    monkeypatch.setattr(d.l1_check, 'check', fail)
+def test_failures_are_independent_and_private():
     calls = []
-    monkeypatch.setattr(d.cleanup, 'audit', lambda p: calls.append(p) or fail())
-    result = d.collect('fixture')
+    result = d.collect('fixture', check=fail, audit=lambda p: calls.append(p) or fail())
     assert calls == ['fixture']
     assert result['files']['collection'] == 'unavailable'
     assert result['protection']['collection'] == 'unavailable'
@@ -94,19 +72,17 @@ def test_failures_are_independent_and_private(monkeypatch):
     ('GB', 'GMT Standard Time', 'en-GB', True),
     ('DE', SECRET, SECRET, False),
 ])
-def test_advisor(monkeypatch, country, zone, locale, matches):
-    monkeypatch.setattr(d, 'inspect_windows', lambda: {'timezone': {'id': zone}, 'locale': locale})
-    result = d.advise(country)
+def test_advisor(country, zone, locale, matches):
+    result = d.advise(country, inspect=lambda: {'timezone': {'id': zone}, 'locale': locale})
     assert result['timezone_matches'] is matches
     assert result['language_matches'] is matches
     assert not result['settings_changed'] and not result['exit_country_verified']
     assert SECRET not in json.dumps(result)
 
 
-def test_advisor_refusals(monkeypatch):
-    monkeypatch.setattr(d, 'inspect_windows', fail)
-    assert d.advise(SECRET)['status'] == 'unsupported'
-    result = d.advise('DE')
+def test_advisor_refusals():
+    assert d.advise(SECRET, inspect=fail)['status'] == 'unsupported'
+    result = d.advise('DE', inspect=fail)
     assert result['status'] == 'unavailable'
     assert SECRET not in json.dumps(result)
 
@@ -127,9 +103,8 @@ def test_settings_only_known_uris(monkeypatch):
 
 @pytest.mark.parametrize('facts', [None, {}, {'timezone': {'id': None}, 'locale': None},
                                   {'timezone': {'id': ''}, 'locale': 'de-DE'}])
-def test_advisor_unknown_is_not_mismatch(monkeypatch, facts):
-    monkeypatch.setattr(d, 'inspect_windows', lambda: facts)
-    result = d.advise('DE')
+def test_advisor_unknown_is_not_mismatch(facts):
+    result = d.advise('DE', inspect=lambda: facts)
     assert result['status'] == 'unavailable'
     assert 'timezone_matches' not in result
 
@@ -158,18 +133,21 @@ def test_history_read_only_export(paths, tmp_path):
     assert all(path.read_bytes() == data for path, data in originals.items())
 
 
-def test_history_empty_and_unavailable(paths, monkeypatch):
+def test_history_empty_and_unavailable(paths):
     assert d.operation_history(paths)['rows'] == []
     root = paths.state / 'runs'
     root.mkdir(parents=True)
-    (root / 'one').mkdir()
-    monkeypatch.setattr(d, 'PinnedFile', fail)
+    (root / 'one').mkdir()   # a run without a readable result
+    (root / 'two').mkdir()
+    (root / 'two' / 'result.json').write_text(SECRET, encoding='utf-8')
     report = d.operation_history(paths)
     assert report['collection'] == 'partial'
-    assert report['rows'][0]['status'] == 'unavailable'
+    assert [row['status'] for row in report['rows']] == ['unavailable', 'unavailable']
     assert SECRET not in json.dumps(report)
-    monkeypatch.setattr(d, 'guarded', fail)
-    assert d.operation_history(paths)['collection'] == 'unavailable'
+    shutil.rmtree(root)
+    root.write_text(SECRET, encoding='utf-8')   # the runs folder cannot be listed
+    report = d.operation_history(paths)
+    assert report['collection'] == 'unavailable' and SECRET not in json.dumps(report)
 
 
 @pytest.mark.parametrize('data', [b'broken', b'[]', b'{"status": []}', b'x' * (1024 * 1024 + 1)],

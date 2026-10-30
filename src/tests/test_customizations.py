@@ -1,6 +1,6 @@
 import pytest
 from test_reset import paths, write, FakeCrypto
-from claude_reset import customizations as cs, desktop_keys as dk
+from claude_reset.reset import customizations as cs, desktop_keys as dk
 from claude_reset.safeio import SafetyError, remove_owned
 
 
@@ -11,7 +11,6 @@ def customization(paths, monkeypatch):
     write(root / 'unknown-old-auth.json', '{"token":"synthetic credential"}')
     write(root / 'memory/MEMORY.md', 'MEMORY')
     monkeypatch.setattr(cs, 'no_code_owners', lambda: None)
-    monkeypatch.setattr(dk, 'DPAPI', FakeCrypto)
     return root
 
 

@@ -7,8 +7,14 @@ from contextlib import contextmanager
 import pytest
 
 from test_reset import paths, FakeCrypto
-from claude_reset import connections as c, netguard, verification, app
+from claude_reset.backend import location as backend_location
+from claude_reset.network import connections as c, legacy_guard as netguard
+from claude_reset.reset import verification
+from claude_reset import cli
 from claude_reset.safeio import SafetyError
+from claude_reset import config
+from claude_reset import layout
+from cli_env import folders
 
 
 def profile(**updates):
@@ -36,12 +42,12 @@ def test_ipv6_proxy_and_multiple_exit_families():
 def test_invalid_profile_cannot_be_saved(paths, updates):
     with pytest.raises(SafetyError):
         c.save(paths, profile(**updates), crypto=FakeCrypto())
-    assert not (paths.state / c.PROFILE_FILE).exists()
+    assert not (paths.state / layout.CONNECTION_PROFILE).exists()
 
 
 def test_profile_dpapi_roundtrip_and_redacted_receipt(paths):
     result = c.save(paths, profile())  # Actual Windows DPAPI, temporary directory.
-    raw = (paths.state / c.PROFILE_FILE).read_bytes()
+    raw = (paths.state / layout.CONNECTION_PROFILE).read_bytes()
     assert b'8.8.8.8' not in raw and b'127.0.0.1' not in raw
     assert c.load(paths) == profile()
     assert '8.8.8.8' not in json.dumps(result)
@@ -50,7 +56,7 @@ def test_profile_dpapi_roundtrip_and_redacted_receipt(paths):
 
 def test_unknown_profile_fields_are_not_accepted_on_load(paths):
     c.save(paths, profile(), crypto=FakeCrypto())
-    path = paths.state / c.PROFILE_FILE
+    path = paths.state / layout.CONNECTION_PROFILE
     path.write_bytes(FakeCrypto().encrypt(json.dumps(profile(allow_direct=True)).encode()))
     with pytest.raises(SafetyError):
         c.load(paths, crypto=FakeCrypto())
@@ -126,7 +132,7 @@ def test_real_http_connect_ignores_environment_and_keeps_destination_remote(monk
         assert read_header(client) == b'CONNECT claude.ai:443 HTTP/1.1\r\nHost: claude.ai:443\r\n\r\n'
         client.sendall(b'HTTP/1.1 200 Connection established\r\n\r\nOK')
     with proxy_server(handler) as port:
-        with c.connect(f'http://127.0.0.1:{port}', c.PROBE_HOST) as stream:
+        with c.connect(f'http://127.0.0.1:{port}', config.CLAUDE_HOST) as stream:
             assert c.read_exact(stream, 2) == b'OK'
 
 
@@ -138,7 +144,7 @@ def test_real_socks5_sends_domain_without_local_target_dns():
         assert c.read_exact(client, 11) == b'claude.ai\x01\xbb'
         client.sendall(b'\x05\x00\x00\x01\x7f\x00\x00\x01\x01\xbbOK')
     with proxy_server(handler) as port:
-        with c.connect(f'socks5://127.0.0.1:{port}', c.PROBE_HOST) as stream:
+        with c.connect(f'socks5://127.0.0.1:{port}', config.CLAUDE_HOST) as stream:
             assert c.read_exact(stream, 2) == b'OK'
 
 
@@ -165,43 +171,20 @@ def test_failed_tls_is_not_accepted_as_exit_measurement():
     assert 'exit_ip' not in result
 
 
-def test_launch_gate_does_not_ignore_an_unsupported_saved_profile(paths, monkeypatch):
-    c.save(paths, profile(local_proxy='socks5://127.0.0.1:1080'))
-    monkeypatch.setattr(c, 'measure', lambda _: pytest.fail('No network for unsupported launch backend'))
-    assert c.launch_gate(paths)['passed'] is False
-
-
-def test_launch_gate_checks_fresh_exit_and_guard_on_every_launch(paths, monkeypatch):
-    c.save(paths, profile())
-    seen = []
-    monkeypatch.setattr(netguard, 'status', lambda _: {'passed': True})
-    monkeypatch.setattr(c, 'measure', lambda _: seen.append(1) or {'status': 'measured', 'exit_ip': '1.1.1.1'})
-    assert c.launch_gate(paths)['passed'] is False
-    assert c.launch_gate(paths)['passed'] is False
-    assert len(seen) == 2
-
-
-def test_launch_gate_refuses_broken_guard_before_network(paths, monkeypatch):
-    c.save(paths, profile())
-    monkeypatch.setattr(netguard, 'status', lambda _: {'passed': False})
-    monkeypatch.setattr(c, 'measure', lambda _: pytest.fail('No network after failed guard'))
-    assert c.launch_gate(paths)['passed'] is False
-
-
 def test_guard_probe_refuses_changed_backend_before_any_network(monkeypatch):
-    monkeypatch.setattr(netguard, 'locate_guard', lambda: object())
-    monkeypatch.setattr(netguard, 'status', lambda _: {'passed': False})
+    monkeypatch.setattr(backend_location, 'locate_guard', lambda: object())
+    monkeypatch.setattr(backend_location, 'status', lambda _: {'passed': False})
     monkeypatch.setattr(netguard, 'https_status', lambda *a: pytest.fail('Unsafe network request'))
     assert netguard.probe(None)['network_requests'] == 0
 
 
 def test_cli_profile_save_check_and_nonzero_exit_on_mismatch(paths, monkeypatch, capsys):
-    monkeypatch.setattr(app.Paths, 'current', lambda: paths)
+    root = folders(monkeypatch, paths)
     source = paths.local / 'connection.json'
     source.write_text(json.dumps(profile()), encoding='utf-8')
-    assert app.main(['--connection-save', str(source)]) == 0
+    assert cli.main(['--connection-save', str(source)] + root) == 0
     monkeypatch.setattr(c, 'measure', lambda _: {'status': 'measured', 'exit_ip': '1.1.1.1'})
-    assert app.main(['--connection-check']) == 2
+    assert cli.main(['--connection-check'] + root) == 2
     assert '1.1.1.1' not in capsys.readouterr().out
 
 

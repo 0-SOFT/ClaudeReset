@@ -3,7 +3,7 @@ import struct
 from types import SimpleNamespace
 import pytest
 from dissect.extfs import journal as jdb
-from claude_reset.journal import replay_v3, Overlay, checksum, MAGIC
+from claude_reset.reset.journal import replay_v3, Overlay, checksum, MAGIC
 from claude_reset.safeio import SafetyError
 
 SIZE, UUID = 1024, b'0123456789abcdef'

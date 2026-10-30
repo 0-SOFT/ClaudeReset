@@ -1,7 +1,7 @@
 import json
 import threading
 
-from claude_reset.tunnel_transport import ConnectRelay
+from claude_reset.network.tunnel_transport import ConnectRelay
 
 
 def relay(path):

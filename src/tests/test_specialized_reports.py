@@ -5,7 +5,7 @@ from test_reset import paths
 from test_customizations import customization
 from test_cowork import setup_cowork
 from test_native import native_setup
-from claude_reset import customizations as cs,cowork as cw,desktop_keys as dk
+from claude_reset.reset import customizations as cs, cowork as cw, desktop_keys as dk
 from claude_reset.safeio import SafetyError
 
 @pytest.mark.parametrize('kind',['customization','cowork','native'])
@@ -18,8 +18,9 @@ def test_specialized_apply_rebuilds_public_report(paths,request,monkeypatch,kind
         profile=request.getfixturevalue('setup_cowork')
         report=cw.create_export(paths,profile,include_work=True);folder='cowork-runs';apply=cw.reset_exported
     else:
-        profile,_,_=request.getfixturevalue('native_setup')
-        report=dk.create_plan(paths,profile);folder='key-runs';apply=dk.apply_plan
+        profile,_,_,desktop=request.getfixturevalue('native_setup')
+        report=dk.create_plan(paths,profile, desktop=desktop);folder='key-runs'
+        apply=lambda paths,run,**kw:dk.apply_plan(paths,run,desktop=desktop,**kw)
     run=report['run'];path=paths.state/folder/run/'result.json'
     report.update(ready_for_new_account=True,token='SENSITIVE_PUBLIC_REPORT_METADATA',network='verified')
     path.write_text(json.dumps(report),encoding='utf-8')
@@ -28,11 +29,11 @@ def test_specialized_apply_rebuilds_public_report(paths,request,monkeypatch,kind
         if kind in ('customization','cowork'):
             monkeypatch.setattr(cs if kind=='customization' else cw,'remove_owned',fail)
         else:
-            original=dk.call_native
+            original=desktop.answers['native']
             def native(paths,operation,**kwargs):
                 if operation=='delete':fail()
                 return original(paths,operation,**kwargs)
-            monkeypatch.setattr(dk,'call_native',native)
+            desktop.answers['native']=native
         with pytest.raises(SafetyError):apply(paths,run,server_step_complete=True)
         result=json.loads(path.read_text(encoding='utf-8'))
     else:result=apply(paths,run,server_step_complete=True)

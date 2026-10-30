@@ -1,11 +1,11 @@
 import json
 import pytest
 from test_reset import paths,write,platform
-from claude_reset.core import build_plan
-from claude_reset.discovery import Selection
-from claude_reset.catalog import AUTH_VARS
-from claude_reset.privacy import flag_states,otel_configuration,vscode_settings
-from claude_reset.windows_environment import folded
+from claude_reset.reset.planner import build_plan
+from claude_reset.model.reset import Selection
+from claude_reset.reset.catalog import AUTH_VARS
+from claude_reset.privacy.inventory import flag_states, otel_configuration, vscode_settings
+from claude_reset.windows.environment import folded
 from claude_reset.safeio import SafetyError,fingerprint
 
 
@@ -17,7 +17,7 @@ def test_every_project_authentication_alias_blocks_without_modifying_or_exportin
         write(project/'.claude'/filename,json.dumps({'env':{spelling(name):'PRIVATE_FIXTURE_VALUE'}}))
         before=fingerprint(project,project)
         result=build_plan(paths,('code',),selection=Selection(projects=[str(project)]),platform_state=platform(),env={})
-        assert any('Project authentication' in b for b in result.blockers),name
+        assert any('plan.project_auth' in b for b in result.blockers),name
         assert 'PRIVATE_FIXTURE_VALUE' not in json.dumps(result.redacted())
         assert fingerprint(project,project)==before
 
@@ -29,7 +29,7 @@ def test_windows_authentication_presence_is_case_insensitive(paths,source):
         if source=='process':env[name.lower()]='PRIVATE_FIXTURE_VALUE'
         else:state['environment_presence']={'User:'+name.lower():True}
         result=build_plan(paths,('code',),platform_state=state,env=env)
-        assert any('Alternative authentication source' in b for b in result.blockers),name
+        assert any('plan.auth_source' in b for b in result.blockers),name
         assert 'PRIVATE_FIXTURE_VALUE' not in json.dumps(result.redacted())
 
 
@@ -39,7 +39,7 @@ def test_custom_directory_case_does_not_hide_an_unselected_profile(paths,source)
     if source=='process':env['claude_config_dir']=value
     else:state['directory_environment']={'claude_config_dir':value}
     result=build_plan(paths,('code',),platform_state=state,env=env)
-    assert any('Custom data directory requires explicit' in b for b in result.blockers)
+    assert any('plan.custom_directory_unselected' in b for b in result.blockers)
 
 
 @pytest.mark.parametrize('value',[{'name':'a','NAME':'b'},{1:'PRIVATE_FIXTURE_VALUE'},[]])
@@ -52,7 +52,7 @@ def test_project_case_collision_has_no_applicable_plan(paths):
     project=paths.home/'selected-project'
     write(project/'.claude/settings.json',json.dumps({'env':{'ANTHROPIC_API_KEY':'A','anthropic_api_key':'B'}}))
     result=build_plan(paths,('code',),selection=Selection(projects=[str(project)]),platform_state=platform(),env={})
-    assert result.blockers==['Profile discovery failed; no safe plan can be built'] and not result.actions
+    assert result.blockers==('plan.discovery_failed',) and not result.actions
 
 
 def test_privacy_names_are_folded_but_values_and_effective_policy_remain_private(paths):

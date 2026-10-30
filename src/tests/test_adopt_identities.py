@@ -2,8 +2,9 @@ import types
 
 import pytest
 
-from claude_reset import strict_guard as guard
-from claude_reset.strict_wfp import LAYERS, Identity
+from claude_reset.network import gate_rules as guard
+from claude_reset import layout
+from claude_reset.network.strict_wfp import LAYERS, Identity
 
 
 class FakeEngine:
@@ -71,7 +72,7 @@ def test_every_installed_extension_version_is_covered(tmp_path):
 def test_exclusion_flag_still_removes_the_extension_binaries(tmp_path):
     paths = home_with(tmp_path, versions=('2.1.311',))
     (paths.state / 'strict-guard').mkdir(parents=True)
-    (paths.state / 'strict-guard' / 'exclude-vscode-extension.flag').write_text('')
+    (paths.state / 'strict-guard' / layout.EXTENSION_EXCLUDED_FLAG).write_text('')
     assert images(guard.identities(paths)) == []
 
 

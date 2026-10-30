@@ -2,9 +2,9 @@
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from claude_reset import gateway_service as module
+from claude_reset.windows import gateway_service as module
 from claude_reset.safeio import SafetyError
-from claude_reset.backend_lifecycle import Generation
+from claude_reset.backend.lifecycle import Generation
 from test_backend_lifecycle import Platform
 
 class Api:

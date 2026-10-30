@@ -1,11 +1,12 @@
 import json
 import pytest
+from claude_reset.model.confirmation import Confirmation
 
-from claude_reset.cleanup import preview, audit, fixed_targets
-from claude_reset.core import Paths
+from claude_reset.reset.cleanup import preview, audit, fixed_targets
+from claude_reset.layout import Paths
 from claude_reset.safeio import SafetyError
-from claude_reset.cleanup import prepare_wipe, WipeExecutor
-from claude_reset.windows import DPAPI
+from claude_reset.reset.cleanup import prepare_wipe, WipeExecutor
+from claude_reset.windows.system import DPAPI
 
 
 def offline():
@@ -17,7 +18,7 @@ def test_credentials_removed_and_verified_without_public_names(paths):
     inspect = lambda: {'processes': [], 'credentials': tuple(names)}
     plan = prepare_wipe(paths, inspect=inspect)
     report = WipeExecutor(paths, inspect=inspect, delete_credential=names.remove).apply(
-        plan, confirmation='СТЕРЕТЬ', consent_id=plan.id, server_step_complete=True)
+        plan, confirmation=Confirmation.ERASE, consent_id=plan.id, server_step_complete=True)
     assert not names and report['credentials_verified_absent'] and report['credentials_removed'] == 1
     assert 'secret-password' not in repr(plan) + json.dumps(report)
     saved = (paths.state / 'runs' / plan.id / 'result.json').read_text(encoding='utf8')
@@ -32,7 +33,7 @@ def test_credential_change_refuses_before_file_delete(paths):
     plan = prepare_wipe(paths, inspect=inspect, accept_unlisted=True)
     names.append('Claude-changed')
     with pytest.raises(SafetyError):
-        WipeExecutor(paths, inspect=inspect).apply(plan, confirmation='СТЕРЕТЬ',
+        WipeExecutor(paths, inspect=inspect).apply(plan, confirmation=Confirmation.ERASE,
             consent_id=plan.id, server_step_complete=True)
     assert target.read_text() == 'keep'
 
@@ -42,31 +43,28 @@ def test_credentials_remaining_are_partial(paths):
     plan = prepare_wipe(paths, inspect=inspect)
     with pytest.raises(SafetyError):
         WipeExecutor(paths, inspect=inspect, delete_credential=lambda _: None).apply(
-            plan, confirmation='СТЕРЕТЬ', consent_id=plan.id, server_step_complete=True)
+            plan, confirmation=Confirmation.ERASE, consent_id=plan.id, server_step_complete=True)
     result = json.loads((paths.state / 'runs' / plan.id / 'result.json').read_text())
     assert result['status'] == 'failed_or_partial' and not result['credentials_verified_absent']
 
 
-def test_cowork_export_required_and_rechecked(paths, monkeypatch):
-    from claude_reset import cowork
-    from claude_reset.native_worker import FAMILY
+def test_cowork_export_required_and_rechecked(paths):
+    from claude_reset.reset.native_worker import FAMILY
     profile = paths.local / 'Claude-Data' / FAMILY.lower()
     (profile / 'local-agent-mode-sessions').mkdir(parents=True)
     assert 'cowork_export' in prepared(paths).blockers
     calls = []
-    monkeypatch.setattr(cowork, 'verify_cleanup_exports', lambda *args: calls.append(args[1]))
     plan = prepare_wipe(paths, inspect=offline, cowork_export='a' * 32)
     assert not plan.blockers
-    execute(paths, plan)
+    execute(paths, plan, verify_exports=lambda *args: calls.append(args[1]))
     assert calls == ['a' * 32, 'a' * 32]
     target = paths.home / '.claude.json'
     target.write_text('keep')
     def refuse(*args):
         raise SafetyError('export changed')
-    monkeypatch.setattr(cowork, 'verify_cleanup_exports', refuse)
     plan = prepare_wipe(paths, inspect=offline, accept_unlisted=True, cowork_export='a' * 32)
     with pytest.raises(SafetyError):
-        execute(paths, plan)
+        execute(paths, plan, verify_exports=refuse)
     assert target.exists()
 
 
@@ -84,9 +82,9 @@ def prepared(paths, mode='wipe'):
     return prepare_wipe(paths, mode, accept_unlisted=True, inspect=offline)
 
 
-def execute(paths, plan):
-    return WipeExecutor(paths, inspect=offline).apply(
-        plan, confirmation='СТЕРЕТЬ', consent_id=plan.id, server_step_complete=True)
+def execute(paths, plan, **options):
+    return WipeExecutor(paths, inspect=offline, **options).apply(
+        plan, confirmation=Confirmation.ERASE, consent_id=plan.id, server_step_complete=True)
 
 
 @pytest.fixture
@@ -124,7 +122,7 @@ def test_audit_empty_contents_and_new_target(paths):
 
 
 def test_unreadable_is_not_zero(paths, monkeypatch):
-    from claude_reset import cleanup
+    from claude_reset.reset import cleanup
     def denied(*_):
         raise PermissionError('private-user secret-password')
     monkeypatch.setattr(cleanup, 'tree_entries', denied)
@@ -190,7 +188,7 @@ def test_wipe_refuses_without_mutation(paths, change):
     target = paths.home / '.claude.json'
     target.write_bytes(b'old')
     plan = prepared(paths)
-    options = dict(confirmation='СТЕРЕТЬ', consent_id=plan.id, server_step_complete=True)
+    options = dict(confirmation=Confirmation.ERASE, consent_id=plan.id, server_step_complete=True)
     inspect = offline
     if change == 'word': options['confirmation'] = 'стереть'
     if change == 'id': options['consent_id'] = 'other'
@@ -248,7 +246,7 @@ def test_encryption_failure_precedes_deletion(paths):
     plan = prepared(paths, 'wipe_memory')
     with pytest.raises(SafetyError) as error:
         WipeExecutor(paths, inspect=offline, crypto=Broken()).apply(
-            plan, confirmation='СТЕРЕТЬ', consent_id=plan.id, server_step_complete=True)
+            plan, confirmation=Confirmation.ERASE, consent_id=plan.id, server_step_complete=True)
     assert (profile / 'CLAUDE.md').read_bytes() == b'memory'
     assert 'secret-password' not in str(error.value)
 
@@ -264,39 +262,32 @@ def test_blocker_inventory_versions_and_extras(paths):
     assert (profile / 'custom-source').exists()
 
 
-def test_service_and_restore_sources_block_wipe(paths, monkeypatch):
-    from claude_reset import cleanup
-    monkeypatch.setattr(cleanup, 'inspect_windows', lambda: {'restore_sources': ['active']})
-    monkeypatch.setattr(cleanup, 'ps_json', lambda _: {'running': True})
-    state = cleanup.inspect_cleanup()
+def test_service_and_restore_sources_block_wipe(paths):
+    from claude_reset.reset import cleanup
+    state = cleanup.inspect_cleanup(windows=lambda: {'restore_sources': ['active']}, query=lambda _: {'running': True})
     plan = prepare_wipe(paths, inspect=lambda: state)
     assert set(plan.blockers) == {'restore_sources', 'cowork_service'}
     with pytest.raises(SafetyError):
         execute(paths, plan)
 
 
-def test_restore_failure_keeps_encrypted_memory(paths, monkeypatch):
-    from claude_reset import cleanup
+def test_restore_failure_keeps_encrypted_memory(paths):
     profile = paths.home / '.claude'
     profile.mkdir()
     (profile / 'CLAUDE.md').write_bytes(b'original')
     plan = prepared(paths, 'wipe_memory')
     def fail(*_):
         raise PermissionError('private-user')
-    monkeypatch.setattr(cleanup, 'restore_memory', fail)
     with pytest.raises(SafetyError):
-        execute(paths, plan)
+        execute(paths, plan, restore=fail)
     run = paths.state / 'runs' / plan.id
     assert json.loads((run / 'result.json').read_text('utf-8'))['status'] == 'failed_or_partial'
     assert json.loads(DPAPI().decrypt((run / 'memory.dpapi').read_bytes()))['files']
 
 @pytest.mark.parametrize('change', ['none', 'source', 'archive', 'missing'])
 def test_multilocation_export_and_wipe(paths, monkeypatch, change):
-    from claude_reset import cowork, desktop_keys
-    from test_reset import FakeCrypto
+    from claude_reset.reset import cowork
     monkeypatch.setattr(cowork, 'no_owners', lambda: None)
-    monkeypatch.setattr(cowork, 'DPAPI', FakeCrypto)
-    monkeypatch.setattr(desktop_keys, 'DPAPI', FakeCrypto)
     sources = cowork.profiles(paths)
     for source in sources:
         work = source / 'local-agent-mode-sessions/task/outputs/result.txt'
@@ -316,7 +307,7 @@ def test_multilocation_export_and_wipe(paths, monkeypatch, change):
     inspect = lambda: {'desktop_versions': ['future-version']}
     plan = prepare_wipe(paths, inspect=inspect, cowork_export=runs)
     def apply():
-        return WipeExecutor(paths, inspect=inspect).apply(plan, confirmation='СТЕРЕТЬ',
+        return WipeExecutor(paths, inspect=inspect).apply(plan, confirmation=Confirmation.ERASE,
             consent_id=plan.id, server_step_complete=True)
     assert not plan.blockers
     if change == 'none':
@@ -338,6 +329,6 @@ def test_multilocation_export_and_wipe(paths, monkeypatch, change):
 
 
 def test_cowork_arbitrary_profile_refused(paths):
-    from claude_reset import cowork
+    from claude_reset.reset import cowork
     with pytest.raises(SafetyError):
         cowork.create_export(paths, paths.home / 'arbitrary', include_work=True)
