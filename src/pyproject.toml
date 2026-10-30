@@ -1,6 +1,6 @@
 [project]
 name = "claude-reset"
-version = "1.1.1"
+version = "1.1.2"
 description = "Reset everything Claude keeps on a Windows PC and route Claude to the internet only through your proxy"
 requires-python = ">=3.12"
 dependencies = ["dissect.hypervisor==3.21", "dissect.extfs==3.15", "dissect.util==3.24"]
